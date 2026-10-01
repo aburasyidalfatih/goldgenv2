@@ -303,7 +303,8 @@ _VERIFIED_FIELDS = {
     "openai": ("openai_api_key", "openai_text_model", "openai_image_model"),
 }
 # Computed or internal: never written from the settings form.
-READ_ONLY_SETTING_KEYS = set(VERIFIED_FP_KEY.values()) | {f"{p}_status" for p in VERIFIED_FP_KEY}
+READ_ONLY_SETTING_KEYS = (set(VERIFIED_FP_KEY.values()) | {f"{p}_status" for p in VERIFIED_FP_KEY}
+                          | {"last_metrics_sync_at"})   # written by the nightly sync
 
 def _verification_fingerprint(*values: str) -> str:
     return hashlib.sha256("".join(values).encode("utf-8")).hexdigest()
@@ -634,6 +635,7 @@ def analytics_summary(page: Optional[int] = None, db: Session = Depends(get_db))
             "phase": phase["phase"],
             "tested": phase["tested"],
             "measured": phase["measured"],
+            "pending": phase["pending"],
             "total": phase["total"],
         }
         if phase["phase"] == "focus":

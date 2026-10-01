@@ -500,8 +500,8 @@
                                 </template>
                             </ol>
                             <span class="text-xs text-gold-400 mt-1 block"
-                                  x-text="analyticsSummary.learning.measured < analyticsSummary.learning.total
-                                      ? `Menunggu metrik: ${analyticsSummary.learning.measured}/${analyticsSummary.learning.total} topik terukur`
+                                  x-text="analyticsSummary.learning.pending > 0
+                                      ? `Menunggu metrik ${analyticsSummary.learning.pending} topik (≥48 jam setelah tayang)`
                                       : `Berikutnya #${analyticsSummary.learning.next_rank} · angka = rata-rata reach`"></span>
                         </div>
                     </template>

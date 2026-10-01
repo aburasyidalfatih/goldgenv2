@@ -157,16 +157,35 @@ def topics_for_page(db: Session, page_id: int | None) -> list:
     return query.all()
 
 
+# Posts that count as "this topic was produced for the page". A failed post never
+# reached the audience, so its topic goes back into the queue and is tried again.
+PRODUCED_STATUSES = ("ready", "draft", "publishing", "published")
+
+# A published post still without metrics after this long (e.g. Insights not
+# available for it) stops holding the page back from growing variants.
+METRICS_WAIT_DAYS = 7
+
+
+def _produced_topic_ids(db: Session, page_id: int) -> set:
+    return {tid for (tid,) in db.query(Post.topic_id)
+            .filter(Post.page_id == page_id, Post.status.in_(PRODUCED_STATUSES)).distinct()}
+
+
 def learning_phase(db: Session, page_id: int) -> dict:
     """
     Where a page stands in its curriculum. 'test' while some active base topic has
-    never been produced for the page; 'focus' once every one has been. `measured`
-    counts base topics with at least one published post old enough to judge.
+    not been produced for the page (failed posts do not count); 'focus' once every
+    one has been.
+
+    `measured`: base topics with a published post old enough to judge, with metrics.
+    `pending`: base topics published but still waiting for judgeable metrics (and
+    not yet given up on). `ready_for_variants` is the moment the winners are known:
+    focus phase, nothing pending, at least one topic measured.
     """
     bases = (db.query(ContentTopic)
                .filter(ContentTopic.source == "seed", ContentTopic.is_active.isnot(False))
                .all())
-    produced = {tid for (tid,) in db.query(Post.topic_id).filter(Post.page_id == page_id).distinct()}
+    produced = _produced_topic_ids(db, page_id)
     measured = {
         tid for (tid,) in db.query(Post.topic_id)
         .join(PostMetric, PostMetric.post_id == Post.id)
@@ -174,12 +193,24 @@ def learning_phase(db: Session, page_id: int) -> dict:
                 Post.published_at.isnot(None), Post.published_at <= _mature_cutoff())
         .distinct()
     }
+    give_up = _naive_utc_cutoff(METRICS_WAIT_DAYS)
+    awaiting = {
+        tid for (tid,) in db.query(Post.topic_id)
+        .filter(Post.page_id == page_id, Post.status == "published",
+                Post.published_at.isnot(None), Post.published_at > give_up)
+        .distinct()
+    }
     untested = [t for t in bases if t.id not in produced]
+    measured_count = sum(1 for t in bases if t.id in measured)
+    pending_count = sum(1 for t in bases if t.id in awaiting and t.id not in measured)
+    phase = "test" if untested else "focus"
     return {
-        "phase": "test" if untested else "focus",
+        "phase": phase,
         "total": len(bases),
         "tested": len(bases) - len(untested),
-        "measured": sum(1 for t in bases if t.id in measured),
+        "measured": measured_count,
+        "pending": pending_count,
+        "ready_for_variants": phase == "focus" and pending_count == 0 and measured_count > 0,
         "untested": untested,
     }
 
@@ -480,10 +511,6 @@ def page_topic_weights(db: Session, page_id: int, topics: list) -> dict:
 def _family_key(topic: ContentTopic) -> int:
     """A base topic and every variant grown from it form one family (one subject)."""
     return topic.base_topic_id or topic.id
-
-
-def _produced_topic_ids(db: Session, page_id: int) -> set:
-    return {tid for (tid,) in db.query(Post.topic_id).filter(Post.page_id == page_id).distinct()}
 
 
 def focus_winners(db: Session, page_id: int, topics: list | None = None,

@@ -1,8 +1,9 @@
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from config import (
     SCHEDULER_TIMEZONE,
@@ -44,6 +45,12 @@ COMMENT_REPLY_INTERVAL_MINUTES = 10
 def get_setting_val(db, key, default=""):
     s = db.query(AppSetting).filter(AppSetting.key == key).first()
     return s.value if s and s.value else default
+
+def _set_setting(db, key, value: str):
+    row = db.query(AppSetting).filter(AppSetting.key == key).first() or AppSetting(key=key)
+    row.value = value
+    db.add(row)
+    db.commit()
 
 def _int_setting(db, key, default, lo, hi):
     try:
@@ -190,6 +197,7 @@ def metrics_sync_job():
             logger.info(f"[Scheduler] '{entry['page_name']}' top topic: {entry['winning_topic']}")
 
         stock_focus_variants(db)
+        _set_setting(db, LAST_METRICS_SYNC_KEY, datetime.now(timezone.utc).isoformat())
 
         # Sweep poster files left behind by failed generations.
         cleanup_orphan_images(db)
@@ -249,9 +257,9 @@ def stock_focus_variants(db) -> dict:
     created = {}
     for page in db.query(FacebookPage).filter(FacebookPage.is_active.isnot(False)).all():
         phase = learning_phase(db, page.id)
-        if phase["phase"] != "focus" or phase["measured"] < phase["total"]:
-            logger.info(f"[Scheduler] '{page.name}' still testing base topics "
-                        f"({phase['measured']}/{phase['total']} measured); no variants yet.")
+        if not phase["ready_for_variants"]:
+            logger.info(f"[Scheduler] '{page.name}' not ready for variants: {phase['phase']} phase, "
+                        f"{phase['tested']}/{phase['total']} tested, {phase['pending']} awaiting metrics.")
             continue
         winners = focus_winners(db, page.id)
         leaders = [w["leader"].id for w in winners]
@@ -385,11 +393,98 @@ def get_schedule_status(enabled: bool = True) -> dict:
     }
 
 
+# Jobs live in memory and are rebuilt from "now" at startup, so whatever fell due
+# while the app was down (a VPS reboot, a redeploy) would silently never happen.
+# Shortly after startup, catch_up_job runs what was missed.
+CATCH_UP_DELAY_SECONDS = 60
+CATCH_UP_POST_HOURS = 3          # a post slot missed longer ago than this is skipped
+METRICS_STALE_HOURS = 26         # the nightly sync is overdue past this
+LAST_METRICS_SYNC_KEY = "last_metrics_sync_at"
+STARTED_AT: datetime | None = None
+
+
+def _latest_slot_before(moment: datetime, times: list) -> datetime | None:
+    """The most recent posting slot at or before `moment` (today or yesterday)."""
+    slots = []
+    for hour, minute in times:
+        for days_back in (0, 1):
+            slot = (moment - timedelta(days=days_back)).replace(hour=hour, minute=minute,
+                                                                 second=0, microsecond=0)
+            if slot <= moment:
+                slots.append(slot)
+    return max(slots) if slots else None
+
+
+def missed_post_pages(db, started_at: datetime, now: datetime | None = None) -> list:
+    """
+    Autopilot pages whose latest slot fell while the app was down: before this
+    process started, within CATCH_UP_POST_HOURS, and with no post created for the
+    page since. Only the latest slot is caught up, so a long outage never fires a
+    burst of posts; slots after startup belong to the live scheduler.
+    """
+    now = (now or datetime.now(timezone.utc)).astimezone(SCHEDULER_TZ)
+    started = started_at.astimezone(SCHEDULER_TZ)
+    due = []
+    pages = db.query(FacebookPage).filter(FacebookPage.is_active.isnot(False),
+                                          FacebookPage.autopilot_enabled.is_(True)).all()
+    for page in pages:
+        if not page.access_token:
+            continue
+        slot = _latest_slot_before(started, parse_post_times(page.auto_post_times))
+        if slot is None or now - slot > timedelta(hours=CATCH_UP_POST_HOURS):
+            continue
+        slot_utc = slot.astimezone(timezone.utc).replace(tzinfo=None)
+        produced = db.query(Post.id).filter(Post.page_id == page.id, Post.created_at >= slot_utc).first()
+        if not produced:
+            due.append(page.id)
+    return due
+
+
+def metrics_sync_overdue(db, now: datetime | None = None) -> bool:
+    raw = get_setting_val(db, LAST_METRICS_SYNC_KEY)
+    if not raw:
+        return True
+    try:
+        last = datetime.fromisoformat(raw)
+    except ValueError:
+        return True
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    return (now or datetime.now(timezone.utc)) - last > timedelta(hours=METRICS_STALE_HOURS)
+
+
+def catch_up_job():
+    """Runs, once after startup, the metric sync and post slots missed during downtime."""
+    db = SessionLocal()
+    try:
+        overdue = metrics_sync_overdue(db)
+        pages_due = missed_post_pages(db, STARTED_AT or datetime.now(timezone.utc))
+    finally:
+        db.close()
+
+    if overdue:
+        logger.info("[Scheduler] Catch-up: nightly metric sync was missed. Running it now.")
+        metrics_sync_job()
+    for page_row_id in pages_due:
+        logger.info(f"[Scheduler] Catch-up: page {page_row_id} missed its posting slot while offline.")
+        auto_generate_and_post_job(page_row_id)
+
+
 def start_scheduler():
+    global STARTED_AT
     if scheduler.running:
         return
 
+    STARTED_AT = datetime.now(timezone.utc)
     reload_autopost_schedule()
+
+    scheduler.add_job(
+        catch_up_job,
+        DateTrigger(run_date=STARTED_AT + timedelta(seconds=CATCH_UP_DELAY_SECONDS)),
+        id='catch_up_job',
+        replace_existing=True,
+        misfire_grace_time=600,
+    )
 
     # Daily metric sync at 03:00 local time, well after the last post of the day.
     scheduler.add_job(

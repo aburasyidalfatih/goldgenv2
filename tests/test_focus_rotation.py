@@ -237,3 +237,34 @@ def test_analitik_melaporkan_tahap_dan_rotasi(client, make_page, make_post, fini
     assert [w["title"] for w in fokus["rotation"]] == [pertama.title, kedua.title, ketiga.title]
     assert fokus["rotation"][0]["avg_reach"] == 15000
     assert fokus["next_rank"] == 2
+
+
+def test_postingan_gagal_tidak_dihitung_sudah_diuji(client, make_page, make_post, topics, db):
+    """Token kedaluwarsa dll.: topiknya belum pernah sampai ke audiens, jadi dicoba lagi."""
+    page = make_page("111")
+    gagal = topics[3]
+    make_post(page["id"], gagal, status="failed")
+    make_post(page["id"], topics[4], status="ready")      # draft menunggu: tetap dihitung
+
+    phase = learning_phase(db, page["id"])
+
+    assert gagal.id in {t.id for t in phase["untested"]}
+    assert topics[4].id not in {t.id for t in phase["untested"]}
+
+
+def test_variasi_menunggu_metrik_lalu_tidak_tertahan_selamanya(client, make_page, make_post,
+                                                              finish_test_phase, topics, db):
+    page = make_page("111")
+    finish_test_phase(page["id"], reach=1000, skip={topics[2].id})
+    baru = make_post(page["id"], topics[2], days_ago=1, reach=500)     # belum 48 jam
+
+    fase = learning_phase(db, page["id"])
+    assert (fase["phase"], fase["pending"], fase["ready_for_variants"]) == ("focus", 1, False)
+
+    # Seminggu lebih tanpa metrik (Insights tidak tersedia): tidak lagi menahan.
+    from datetime import datetime, timedelta, timezone
+    db.delete(baru.metrics[0])
+    baru.published_at = (datetime.now(timezone.utc) - timedelta(days=9)).replace(tzinfo=None)
+    db.commit()
+    fase = learning_phase(db, page["id"])
+    assert (fase["pending"], fase["ready_for_variants"]) == (0, True)
