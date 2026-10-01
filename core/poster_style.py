@@ -40,6 +40,36 @@ THEMES = {
                    "water, dark espresso-brown ink",
         "swatch": ["#e8d3a9", "#c4622d", "#2bb3b1", "#3b2418"],
     },
+    "glacier_blue": {
+        "label": "Glacier Blue — putih es, biru gletser, perak",
+        "palette": "icy white and pale frost-blue background, deep glacier-blue and slate-gray "
+                   "linework, silver accents, crystal-clear cyan water",
+        "swatch": ["#eef5fa", "#1f5f8b", "#5b6b7a", "#a9b4bf"],
+    },
+    "blueprint": {
+        "label": "Blueprint — biru kobalt, garis putih, kuning",
+        "palette": "classic engineering blueprint style: cobalt-blue background with crisp white "
+                   "technical linework and grid, signal-yellow highlights for gold",
+        "swatch": ["#1d4e9e", "#ffffff", "#f2c230", "#163a75"],
+    },
+    "volcanic": {
+        "label": "Volcanic — hitam basal, oranye lava",
+        "palette": "dark basalt-black and charcoal background, glowing lava-orange and ember-red "
+                   "accents, warm gray rock textures, light ash-gray text",
+        "swatch": ["#16161a", "#ff6b1a", "#c2261d", "#b9b5ae"],
+    },
+    "crimson_ore": {
+        "label": "Crimson Ore — merah marun, emas, krem",
+        "palette": "rich oxblood-burgundy background, polished gold headings and linework, "
+                   "cream text, dusky rose and deep teal accents",
+        "swatch": ["#5c1a24", "#d9a93c", "#f4e9d8", "#2e5e63"],
+    },
+    "sage_clay": {
+        "label": "Sage & Clay — hijau sage, tanah liat, krem",
+        "palette": "soft sage-green background, terracotta-clay pink accents, warm cream panels, "
+                   "olive-brown ink, muted blue-gray water",
+        "swatch": ["#a9b89a", "#c97b63", "#f2ead9", "#5a5233"],
+    },
 }
 
 

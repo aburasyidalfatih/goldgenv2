@@ -5,10 +5,12 @@ from core.poster_style import DEFAULT_THEME, THEMES, apply_watermark, theme_prom
 from core import imagen_client
 
 
-def test_minimal_tiga_tema_warna_yang_lengkap():
-    assert len(THEMES) >= 3
+def test_cukup_tema_berbeda_untuk_lima_fanspage():
+    assert len(THEMES) >= 5, "pemilik punya 5 Fanspage, masing-masing perlu warna sendiri"
     for key, theme in THEMES.items():
         assert theme["label"] and theme["palette"] and len(theme["swatch"]) >= 3, key
+    assert len({t["palette"] for t in THEMES.values()}) == len(THEMES)
+    assert len({tuple(t["swatch"]) for t in THEMES.values()}) == len(THEMES)
 
 
 def test_palet_tema_masuk_ke_prompt_gambar():
