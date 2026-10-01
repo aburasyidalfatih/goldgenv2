@@ -24,6 +24,7 @@ from config import (
     DEFAULT_OPENAI_IMAGE_MODEL,
     SENSITIVE_SETTING_KEYS,
     SECRET_MASK,
+    DEFAULT_CONTENT_LANGUAGE,
 )
 from database.db_session import engine, Base, get_db, SessionLocal
 from database.migrations import run_migrations, migrate_single_page_to_multi
@@ -576,7 +577,7 @@ def evolve_topics_endpoint(page: Optional[int] = None, db: Session = Depends(get
         provider=text_ai["provider"],
         window_days=get_int_setting(db, "topic_window_days", 7, 1, 90),
         max_new=get_int_setting(db, "max_new_topics_per_cycle", 2, 1, 5),
-        language=(target.content_language if target else None) or "id",
+        language=(target.content_language if target else None) or DEFAULT_CONTENT_LANGUAGE,
         page_id=target.id if target else None,
     )
 
@@ -673,7 +674,7 @@ def generate_content_endpoint(req: GenerateRequest, db: Session = Depends(get_db
 
     # Content is produced per page: language and ratio follow the page's own settings.
     page = get_page(db, req.page_id) if req.page_id else default_page(db)
-    language = req.language or (page.content_language if page else None) or "id"
+    language = req.language or (page.content_language if page else None) or DEFAULT_CONTENT_LANGUAGE
     aspect_ratio = req.aspect_ratio or (page.aspect_ratio if page else None) or "3:4"
 
     # 1. Select Topic (Adaptive or Manual) using this page's learned weights
@@ -940,7 +941,7 @@ def regenerate_caption_endpoint(post_id: int, db: Session = Depends(get_db)):
         return {"success": False, "message": text_ai["missing"]}
 
     page = get_page(db, post.page_id) if post.page_id else None
-    language = (page.content_language if page else None) or post.language or "id"
+    language = (page.content_language if page else None) or post.language or DEFAULT_CONTENT_LANGUAGE
     topic = db.query(ContentTopic).filter(ContentTopic.id == post.topic_id).first() if post.topic_id else None
     topic_dict = {
         "title": topic.title if topic else post.topic_title,
@@ -1172,7 +1173,7 @@ def regenerate_reply_endpoint(reply_id: int, db: Session = Depends(get_db)):
     page = get_page(db, row.page_id)
     try:
         decision = comment_reply.generate_comment_reply(
-            text_ai, page.name if page else "", (page.content_language if page else None) or "id",
+            text_ai, page.name if page else "", (page.content_language if page else None) or DEFAULT_CONTENT_LANGUAGE,
             row.post_message, row.commenter_name, row.comment_message,
             comment_reply._recent_replies(db, row.page_id))
     except Exception as e:

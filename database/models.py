@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Text, Float, DateTime, ForeignKey, Boolean, UniqueConstraint
 from sqlalchemy.orm import relationship
 from database.db_session import Base
+from config import DEFAULT_CONTENT_LANGUAGE
 
 def utc_now():
     return datetime.now(timezone.utc)
@@ -30,7 +31,7 @@ class FacebookPage(Base):
     fan_count = Column(Integer, default=0)
 
     # Per-page content preferences
-    content_language = Column(String(10), default="id")
+    content_language = Column(String(10), default=DEFAULT_CONTENT_LANGUAGE)
     aspect_ratio = Column(String(10), default="3:4")
     auto_post_times = Column(String(200), default="10:00,19:00")
     autopilot_enabled = Column(Boolean, default=False)
@@ -115,7 +116,7 @@ class Post(Base):
     page_id = Column(Integer, ForeignKey("facebook_pages.id"), nullable=True, index=True)
     topic_id = Column(Integer, ForeignKey("content_topics.id"), nullable=True)
     topic_title = Column(String(200), nullable=False)
-    language = Column(String(10), default="id")
+    language = Column(String(10), default=DEFAULT_CONTENT_LANGUAGE)
     visual_title = Column(String(250), nullable=False)
     prompt_used = Column(Text, nullable=False)
     image_filename = Column(String(255), nullable=False)

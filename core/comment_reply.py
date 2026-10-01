@@ -21,6 +21,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from core.ai_provider import ai_backend, complete_json
+from config import DEFAULT_CONTENT_LANGUAGE
 from core.fb_client import fetch_recent_comments, reply_to_comment
 from core.utils import iso_utc
 from database.models import CommentReply, FacebookPage
@@ -278,7 +279,7 @@ def process_page_comments(db: Session, page: FacebookPage, mode: str | None = No
         else:
             try:
                 decision = generate_comment_reply(
-                    text_ai, page.name, page.content_language or "id", cand["post_message"],
+                    text_ai, page.name, page.content_language or DEFAULT_CONTENT_LANGUAGE, cand["post_message"],
                     cand["commenter_name"], cand["comment_message"], recent)
             except Exception as e:
                 # Usually quota or a bad key: stop here and retry these comments next run.

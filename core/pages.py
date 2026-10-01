@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from config import SECRET_MASK
+from config import SECRET_MASK, DEFAULT_CONTENT_LANGUAGE
 from core.utils import iso_utc
 from database.models import FacebookPage, Post, PageTopicWeight, CommentReply
 from core.fb_client import test_facebook_credentials
@@ -36,7 +36,7 @@ def serialize_page(page: FacebookPage, db: Session | None = None) -> dict:
         "fan_count": page.fan_count or 0,
         "has_token": bool(page.access_token),
         "access_token": SECRET_MASK if page.access_token else "",
-        "content_language": page.content_language or "id",
+        "content_language": page.content_language or DEFAULT_CONTENT_LANGUAGE,
         "aspect_ratio": page.aspect_ratio or "3:4",
         "auto_post_times": page.auto_post_times or "10:00,19:00",
         "autopilot_enabled": bool(page.autopilot_enabled),

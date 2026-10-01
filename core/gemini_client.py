@@ -2,7 +2,7 @@ import json
 import logging
 from google import genai
 from google.genai import types
-from config import DEFAULT_TEXT_MODEL
+from config import DEFAULT_TEXT_MODEL, DEFAULT_CONTENT_LANGUAGE
 from core.ai_provider import complete_json, PROVIDER_LABELS
 
 logger = logging.getLogger(__name__)
@@ -59,7 +59,7 @@ def _template_caption(title: str, concept: str, language: str) -> str:
     )
 
 
-def template_content(topic_dict: dict, language: str = "id") -> dict:
+def template_content(topic_dict: dict, language: str = DEFAULT_CONTENT_LANGUAGE) -> dict:
     """
     Deterministic offline blueprint used when the model output is unusable.
     """
@@ -76,7 +76,7 @@ def template_content(topic_dict: dict, language: str = "id") -> dict:
         "caption": _template_caption(title, topic_dict.get("core_concept", ""), language),
     }
 
-def generate_post_content(api_key: str, topic_dict: dict, language: str = "id",
+def generate_post_content(api_key: str, topic_dict: dict, language: str = DEFAULT_CONTENT_LANGUAGE,
                           model_name: str = DEFAULT_TEXT_MODEL, provider: str = "gemini") -> dict:
     """
     Generates structured infographic blueprint prompt and Facebook caption with the

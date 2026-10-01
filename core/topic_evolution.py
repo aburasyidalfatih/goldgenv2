@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from config import DEFAULT_TEXT_MODEL
+from config import DEFAULT_TEXT_MODEL, DEFAULT_CONTENT_LANGUAGE
 from database.models import ContentTopic
 from core.ai_provider import complete_json
 from core.feedback_loop import window_performance
@@ -56,7 +56,7 @@ def build_evolution_prompt(
     winners: list,
     existing_titles: list,
     max_new: int,
-    language: str = "id",
+    language: str = DEFAULT_CONTENT_LANGUAGE,
     base_curriculum: list = None,
     window_days: int = 7,
 ) -> str:
@@ -122,7 +122,7 @@ def generate_topic_variants(
     existing_titles: list,
     max_new: int = 2,
     model_name: str = DEFAULT_TEXT_MODEL,
-    language: str = "id",
+    language: str = DEFAULT_CONTENT_LANGUAGE,
     base_curriculum: list = None,
     window_days: int = 7,
     provider: str = "gemini",
@@ -249,7 +249,7 @@ def evolve_topics(
     model_name: str = DEFAULT_TEXT_MODEL,
     window_days: int = 7,
     max_new: int = 2,
-    language: str = "id",
+    language: str = DEFAULT_CONTENT_LANGUAGE,
     page_id: int | None = None,
     generator=generate_topic_variants,
     provider: str = "gemini",

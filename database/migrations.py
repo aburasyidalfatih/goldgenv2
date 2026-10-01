@@ -9,6 +9,8 @@ import logging
 from datetime import datetime, timezone
 from sqlalchemy import text, inspect
 
+from config import DEFAULT_CONTENT_LANGUAGE
+
 logger = logging.getLogger(__name__)
 
 # (table, column, SQL type + default) added after the initial release
@@ -65,7 +67,7 @@ def migrate_single_page_to_multi(engine) -> str | None:
                 "name": settings.get("fb_page_name") or f"Fanspage {page_id}",
                 "token": token,
                 "picture": settings.get("fb_page_picture") or None,
-                "lang": settings.get("content_language") or "id",
+                "lang": settings.get("content_language") or DEFAULT_CONTENT_LANGUAGE,
                 "ratio": settings.get("aspect_ratio") or "3:4",
                 "times": settings.get("auto_post_times") or "10:00,19:00",
                 "autopilot": 1 if (settings.get("auto_scheduler_enabled") or "").lower() == "true" else 0,

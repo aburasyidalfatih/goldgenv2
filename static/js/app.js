@@ -1175,7 +1175,7 @@ function autoPosterApp() {
         },
 
         captionLanguageLabel(post) {
-            return (this.postPage(post)?.content_language || 'id') === 'id' ? 'Indonesia' : 'English';
+            return (this.postPage(post)?.content_language || 'en') === 'id' ? 'Indonesia' : 'English';
         },
 
         // Unsaved edits would be overwritten by the new caption, so ask first.

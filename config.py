@@ -16,6 +16,10 @@ IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = DATA_DIR / "autoposter.db"
 SQLALCHEMY_DATABASE_URL = f"sqlite:///{DB_PATH.as_posix()}"
 
+# Language of new Fanspages' captions and comment replies: 'en' (American English)
+# or 'id' (Indonesian). Each page can still be switched in the Fanspage tab.
+DEFAULT_CONTENT_LANGUAGE = "en"
+
 # Default Model & Application Settings (Gemini 3 Family)
 DEFAULT_TEXT_MODEL = "gemini-3.8-flash"
 DEFAULT_IMAGE_MODEL = "gemini-3.1-flash-image"
@@ -39,7 +43,7 @@ DEFAULT_SETTINGS = {
     "fb_page_name": "",
     "fb_page_picture": "",
     "fb_token_status": "Not Configured",
-    "content_language": "id",  # 'id' for Indonesian, 'en' for English
+    "content_language": DEFAULT_CONTENT_LANGUAGE,
     "aspect_ratio": "3:4",     # 3:4 portrait optimal for Facebook
     "auto_scheduler_enabled": "false",
     "auto_post_times": "10:00,19:00",

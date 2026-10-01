@@ -7,6 +7,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from config import (
     SCHEDULER_TIMEZONE,
     DEFAULT_SETTINGS,
+    DEFAULT_CONTENT_LANGUAGE,
 )
 from database.db_session import SessionLocal
 from database.models import AppSetting, Post, FacebookPage
@@ -94,7 +95,7 @@ def auto_generate_and_post_job(page_row_id: int):
                 logger.warning(f"[Scheduler] {backend['label']} API key missing. Skipping auto-post.")
                 return
 
-        lang = page.content_language or "id"
+        lang = page.content_language or DEFAULT_CONTENT_LANGUAGE
         aspect_ratio = page.aspect_ratio or "3:4"
 
         logger.info(f"[Scheduler] Autonomous content cycle for '{page.name}'...")
@@ -250,7 +251,7 @@ def topic_evolution_job():
                 provider=text_ai["provider"],
                 window_days=window_days,
                 max_new=max_new,
-                language=page.content_language or "id",
+                language=page.content_language or DEFAULT_CONTENT_LANGUAGE,
                 page_id=page.id,
             )
             if res.get("success"):

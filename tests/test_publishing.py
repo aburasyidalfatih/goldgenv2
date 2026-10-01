@@ -340,3 +340,13 @@ def test_buat_ulang_caption_tidak_menimpa_dengan_template(client, make_page, fak
 
     assert res["success"] is False
     assert client.get(f"/api/posts/{post['id']}").json()["caption"] == post["caption"]
+
+
+def test_fanspage_baru_default_caption_bahasa_inggris(client, make_page, fake_gemini, with_gemini_key):
+    page = make_page("111")
+    assert page["content_language"] == "en"
+
+    post = client.post("/api/generate", json={"page_id": page["id"]}).json()["post"]
+
+    assert fake_gemini["calls"][-1]["language"] == "en"
+    assert post["caption"].startswith("caption #1 en")
