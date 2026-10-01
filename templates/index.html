@@ -1388,31 +1388,39 @@
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                             <label for="openai-text-model" class="block text-xs font-medium text-slate-200 mb-1">Model Naskah / Teks</label>
-                            <input id="openai-text-model" list="openai-text-models" x-model.trim="settings.openai_text_model"
-                                   @input="settingsDirty = true" autocomplete="off"
-                                   class="w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/60 text-slate-200 font-mono">
-                            <datalist id="openai-text-models">
-                                <option value="gpt-5-mini"></option>
-                                <option value="gpt-5"></option>
-                                <option value="gpt-4.1-mini"></option>
-                                <option value="gpt-4o-mini"></option>
-                            </datalist>
+                            <select id="openai-text-model" :value="openaiModelChoice('text')" @change="chooseOpenaiModel('text', $event.target.value)"
+                                    class="w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/60 text-slate-200">
+                                <option value="gpt-6.1-sol">gpt-6.1-sol ⭐ — seimbang</option>
+                                <option value="gpt-6-luna">gpt-6-luna — paling hemat</option>
+                                <option value="gpt-6-astra">gpt-6-astra — terkuat, termahal</option>
+                                <option value="gpt-5.6-terra">gpt-5.6-terra</option>
+                                <option value="__custom">Model lain… (ketik manual)</option>
+                            </select>
+                            <input x-show="openaiModelChoice('text') === '__custom'" x-cloak aria-label="Nama model teks OpenAI"
+                                   x-model.trim="settings.openai_text_model" @input="settingsDirty = true" autocomplete="off"
+                                   placeholder="mis. gpt-6.1-sol-2026-09-29"
+                                   class="mt-2 w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/60 text-slate-200 font-mono">
                         </div>
                         <div>
                             <label for="openai-image-model" class="block text-xs font-medium text-slate-200 mb-1">Model Gambar / Poster</label>
-                            <input id="openai-image-model" list="openai-image-models" x-model.trim="settings.openai_image_model"
-                                   @input="settingsDirty = true" autocomplete="off"
-                                   class="w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/60 text-slate-200 font-mono">
-                            <datalist id="openai-image-models">
-                                <option value="gpt-image-1"></option>
-                                <option value="gpt-image-1-mini"></option>
-                                <option value="dall-e-3"></option>
-                            </datalist>
+                            <select id="openai-image-model" :value="openaiModelChoice('image')" @change="chooseOpenaiModel('image', $event.target.value)"
+                                    class="w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/60 text-slate-200">
+                                <option value="gpt-image-2.5-flare">gpt-image-2.5-flare ⭐ — cepat, berkualitas</option>
+                                <option value="gpt-image-2.5-sunburst">gpt-image-2.5-sunburst — paling detail, lebih lambat</option>
+                                <option value="gpt-image-2">gpt-image-2</option>
+                                <option value="__custom">Model lain… (ketik manual)</option>
+                            </select>
+                            <input x-show="openaiModelChoice('image') === '__custom'" x-cloak aria-label="Nama model gambar OpenAI"
+                                   x-model.trim="settings.openai_image_model" @input="settingsDirty = true" autocomplete="off"
+                                   placeholder="mis. gpt-image-2.5-flare-2026-09-08"
+                                   class="mt-2 w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/60 text-slate-200 font-mono">
                         </div>
                     </div>
                     <p class="text-xs text-slate-400">
-                        Boleh mengetik nama model lain bila akun Anda punya akses ke model yang lebih baru. Poster OpenAI
-                        dibuat di kanvas potret 2:3, persegi, atau lanskap — yang paling dekat dengan rasio Fanspage.
+                        Daftar model OpenAI per Oktober 2026. Model lama (gpt-5-mini, gpt-image-1, dall-e) sudah atau akan
+                        dihentikan OpenAI dan otomatis diganti. Pakai "Model lain…" bila akun Anda punya akses ke model yang
+                        lebih baru, lalu klik Uji Koneksi. Poster OpenAI dibuat di kanvas potret 2:3, persegi, atau lanskap
+                        — yang paling dekat dengan rasio Fanspage.
                     </p>
 
                     <button @click="testOpenaiConnection()" :disabled="isTestingOpenai"

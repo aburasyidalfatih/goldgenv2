@@ -2,6 +2,13 @@
 // of a stored secret. Sending it back unchanged keeps the stored value.
 const SECRET_MASK = '••••••••••••';
 
+// OpenAI models offered in the Settings dropdowns (checked 1 Oct 2026). Anything
+// else is entered through "Model lain…".
+const OPENAI_MODELS = {
+    text: ['gpt-6.1-sol', 'gpt-6-luna', 'gpt-6-astra', 'gpt-5.6-terra'],
+    image: ['gpt-image-2.5-flare', 'gpt-image-2.5-sunburst', 'gpt-image-2'],
+};
+
 // A 401 from the API means the login session ended (logged out elsewhere, password
 // changed, expired): send the browser back to the login page.
 if (typeof window !== 'undefined') {   // absent when the UI tests load this file in node
@@ -43,6 +50,16 @@ function autoPosterApp() {
         get aiMissingKey() {
             const missing = this.usedProviders.find(p => !this.settings[`${p}_api_key`]);
             return missing ? this.providerLabel(missing) : '';
+        },
+        openaiCustomModel: { text: false, image: false },
+        openaiModelChoice(role) {
+            const value = this.settings[`openai_${role}_model`];
+            return !this.openaiCustomModel[role] && OPENAI_MODELS[role].includes(value) ? value : '__custom';
+        },
+        chooseOpenaiModel(role, value) {
+            this.openaiCustomModel[role] = value === '__custom';
+            if (value !== '__custom') this.settings[`openai_${role}_model`] = value;
+            this.settingsDirty = true;
         },
         providerSnapshot(p) {
             return JSON.stringify(p === 'openai'
@@ -268,8 +285,8 @@ function autoPosterApp() {
             gemini_text_model: 'gemini-3.8-flash',
             gemini_image_model: 'gemini-3.1-flash-image',
             openai_api_key: '',
-            openai_text_model: 'gpt-5-mini',
-            openai_image_model: 'gpt-image-1',
+            openai_text_model: 'gpt-6.1-sol',
+            openai_image_model: 'gpt-image-2.5-flare',
             text_provider: 'gemini',
             image_provider: 'gemini',
             auto_topic_evolution: 'true',

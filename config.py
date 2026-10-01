@@ -26,8 +26,29 @@ DEFAULT_IMAGE_MODEL = "gemini-3.1-flash-image"
 DEFAULT_IMAGE_FALLBACK_MODEL = "imagen-3.0-generate-002"
 
 # Optional OpenAI route (chosen per role in Settings: text_provider / image_provider)
-DEFAULT_OPENAI_TEXT_MODEL = "gpt-5-mini"
-DEFAULT_OPENAI_IMAGE_MODEL = "gpt-image-1"
+DEFAULT_OPENAI_TEXT_MODEL = "gpt-6.1-sol"
+DEFAULT_OPENAI_IMAGE_MODEL = "gpt-image-2.5-flare"
+
+# OpenAI models still served by the API (checked 1 Oct 2026, developers.openai.com
+# /api/docs/models and /deprecations). Retired ones are swapped for their
+# replacement at startup so a saved setting never points at a dead model.
+OPENAI_RETIRED_MODELS = {
+    # text: gpt-3.5/4/4-turbo/4.1-nano off 2026-10-23; gpt-5 snapshots off 2026-12-11
+    "gpt-3.5-turbo": DEFAULT_OPENAI_TEXT_MODEL,
+    "gpt-4": DEFAULT_OPENAI_TEXT_MODEL,
+    "gpt-4-turbo": DEFAULT_OPENAI_TEXT_MODEL,
+    "gpt-4.1-nano": DEFAULT_OPENAI_TEXT_MODEL,
+    "gpt-5": DEFAULT_OPENAI_TEXT_MODEL,
+    "gpt-5-mini": DEFAULT_OPENAI_TEXT_MODEL,
+    "gpt-5-nano": DEFAULT_OPENAI_TEXT_MODEL,
+    # image: dall-e removed 2026-05-12; gpt-image-1 off 2026-10-23; 1-mini/1.5 off 2026-12-01
+    "dall-e-2": DEFAULT_OPENAI_IMAGE_MODEL,
+    "dall-e-3": DEFAULT_OPENAI_IMAGE_MODEL,
+    "gpt-image-1": DEFAULT_OPENAI_IMAGE_MODEL,
+    "gpt-image-1-mini": DEFAULT_OPENAI_IMAGE_MODEL,
+    "gpt-image-1.5": DEFAULT_OPENAI_IMAGE_MODEL,
+    "chatgpt-image-latest": DEFAULT_OPENAI_IMAGE_MODEL,
+}
 
 DEFAULT_SETTINGS = {
     "gemini_api_key": "",

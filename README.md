@@ -23,7 +23,7 @@ Aplikasi cerdas untuk memproduksi konten edukasi visual (poster infografis geolo
    * Pemilih halaman aktif di header; Studio dan Analitik otomatis mengikuti halaman yang dipilih.
 2. **Dashboard Interaktif Berbasis Web (Dark Gold Geology Theme)**:
    * Input dan simpan seluruh kredensial (**Gemini API Key, OpenAI API Key, Facebook Page ID, Page Access Token**) langsung dari UI tanpa perlu mengedit file kode.
-   * **Pilihan mesin AI**: penyedia naskah dan penyedia gambar dipilih terpisah (Gemini atau OpenAI) — misalnya naskah dari Gemini, poster dari `gpt-image-1`. Berlaku untuk generate manual, render ulang, autopilot, dan evolusi topik. Hanya kunci penyedia yang dipilih yang wajib diisi.
+   * **Pilihan mesin AI**: penyedia naskah dan penyedia gambar dipilih terpisah (Gemini atau OpenAI) — misalnya naskah dari Gemini, poster dari `gpt-image-2.5-flare`. Model OpenAI dipilih dari dropdown berisi model yang masih berlaku (GPT-6.1 Sol, GPT-6 Luna, GPT-6 Astra, GPT-5.6 Terra; GPT Image 2.5 Flare/Sunburst, GPT Image 2) atau diketik manual; model yang sudah dihentikan OpenAI (mis. `gpt-5-mini`, `gpt-image-1`, `dall-e-3`) otomatis diganti saat aplikasi menyala. Berlaku untuk generate manual, render ulang, autopilot, dan evolusi topik. Hanya kunci penyedia yang dipilih yang wajib diisi.
    * OpenAI hanya menyediakan kanvas potret 2:3, persegi, dan lanskap; poster dibuat di kanvas yang paling dekat dengan rasio Fanspage.
    * Uji coba validitas API Key dan token dalam 1 klik.
    * Responsif penuh: navigasi tab tetap terjangkau di HP, tablet, dan desktop.

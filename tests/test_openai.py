@@ -8,10 +8,10 @@ import io
 import pytest
 from PIL import Image
 
-from config import SECRET_MASK
 from core import openai_client
 from core.imagen_client import generate_poster_image
 from database.models import AppSetting
+from config import SECRET_MASK, DEFAULT_OPENAI_IMAGE_MODEL, DEFAULT_OPENAI_TEXT_MODEL, OPENAI_RETIRED_MODELS
 
 
 class FakeResponse:
@@ -102,9 +102,9 @@ def test_generate_memakai_openai_bila_dipilih(client, make_page, fake_gemini, wi
     assert res["success"], res
     assert fake_gemini["calls"][0]["provider"] == "openai"
     assert fake_gemini["calls"][0]["api_key"] == "sk-test"
-    assert fake_gemini["calls"][0]["model"] == "gpt-5-mini"
+    assert fake_gemini["calls"][0]["model"] == DEFAULT_OPENAI_TEXT_MODEL
     assert fake_gemini["images"][0] == {"provider": "openai", "api_key": "sk-test",
-                                        "model": "gpt-image-1"}
+                                        "model": DEFAULT_OPENAI_IMAGE_MODEL}
 
 
 def test_penyedia_campuran_naskah_gemini_gambar_openai(client, make_page, fake_gemini,
@@ -197,3 +197,36 @@ def test_poster_openai_gagal_memberi_pesan_jelas(client, monkeypatch):
                         FakeResponse(400, {"error": {"message": "safety system rejected"}}))
     with pytest.raises(RuntimeError, match="safety system rejected"):
         generate_poster_image("sk-x", "poster", "3:4", "gpt-image-1", provider="openai")
+
+
+
+def test_model_openai_yang_dihentikan_diganti_saat_start(client, db):
+    """gpt-image-1 berhenti 23 Okt 2026, gpt-5-mini 11 Des 2026: setelan lama tidak boleh jadi gagal total."""
+    import app as app_module
+    from database.models import AppSetting
+    rows = {r.key: r for r in db.query(AppSetting).filter(
+        AppSetting.key.in_(["openai_text_model", "openai_image_model"]))}
+    rows["openai_text_model"].value, rows["openai_image_model"].value = "gpt-5-mini", "gpt-image-1"
+    db.commit()
+
+    changed = app_module.replace_retired_openai_models(db)
+
+    assert changed == {"openai_text_model": ("gpt-5-mini", DEFAULT_OPENAI_TEXT_MODEL),
+                       "openai_image_model": ("gpt-image-1", DEFAULT_OPENAI_IMAGE_MODEL)}
+    settings = client.get("/api/settings").json()
+    assert (settings["openai_text_model"], settings["openai_image_model"]) == (
+        DEFAULT_OPENAI_TEXT_MODEL, DEFAULT_OPENAI_IMAGE_MODEL)
+
+
+def test_model_pilihan_sendiri_yang_masih_aktif_tidak_disentuh(client, db):
+    import app as app_module
+    from database.models import AppSetting
+    row = db.query(AppSetting).filter(AppSetting.key == "openai_text_model").first()
+    row.value = "gpt-6-luna"
+    db.commit()
+
+    assert app_module.replace_retired_openai_models(db) == {}
+    db.refresh(row)
+    assert row.value == "gpt-6-luna"
+    assert DEFAULT_OPENAI_TEXT_MODEL not in OPENAI_RETIRED_MODELS
+    assert DEFAULT_OPENAI_IMAGE_MODEL not in OPENAI_RETIRED_MODELS

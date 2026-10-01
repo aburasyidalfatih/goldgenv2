@@ -22,6 +22,7 @@ from config import (
     DEFAULT_TEXT_MODEL,
     DEFAULT_OPENAI_TEXT_MODEL,
     DEFAULT_OPENAI_IMAGE_MODEL,
+    OPENAI_RETIRED_MODELS,
     SENSITIVE_SETTING_KEYS,
     SECRET_MASK,
     DEFAULT_CONTENT_LANGUAGE,
@@ -92,6 +93,23 @@ def bootstrap_first_user(db: Session):
     except ValueError as e:
         logger.error(f"AUTOPOSTER_ADMIN_* tidak valid: {e}")
 
+def replace_retired_openai_models(db: Session) -> dict:
+    """
+    A saved OpenAI model that OpenAI has shut down (or is about to) would make
+    every generation fail; swap it for its listed replacement. Returns the changes.
+    """
+    changed = {}
+    for key in ("openai_text_model", "openai_image_model"):
+        row = db.query(AppSetting).filter(AppSetting.key == key).first()
+        if row and row.value in OPENAI_RETIRED_MODELS:
+            changed[key] = (row.value, OPENAI_RETIRED_MODELS[row.value])
+            row.value = OPENAI_RETIRED_MODELS[row.value]
+    if changed:
+        db.commit()
+        for key, (old, new) in changed.items():
+            logger.info(f"OpenAI model '{old}' is retired; {key} switched to '{new}'.")
+    return changed
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Database Initialization
@@ -114,6 +132,7 @@ async def lifespan(app: FastAPI):
         added = seed_base_curriculum(db)
         if added:
             logger.info(f"Added {len(added)} base topic(s) to the curriculum.")
+        replace_retired_openai_models(db)
         # A post left in "publishing" means the app stopped mid-upload. Whether
         # Facebook received it is unknown, so flag it instead of retrying blindly.
         stuck = db.query(Post).filter(Post.status == "publishing").all()
