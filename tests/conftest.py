@@ -128,7 +128,7 @@ def _reset_state():
             topic.base_topic_id = topic.id
 
         for setting in session.query(AppSetting).all():
-            if setting.key in ("gemini_api_key",):
+            if setting.key in ("gemini_api_key", "gemini_verified_fp", "openai_verified_fp"):
                 setting.value = ""
         session.commit()
     finally:

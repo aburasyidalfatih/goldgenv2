@@ -4,12 +4,14 @@ const SECRET_MASK = '••••••••••••';
 
 // A 401 from the API means the login session ended (logged out elsewhere, password
 // changed, expired): send the browser back to the login page.
-const nativeFetch = window.fetch.bind(window);
-window.fetch = async (...args) => {
-    const res = await nativeFetch(...args);
-    if (res.status === 401 && !String(args[0]).startsWith('/api/auth/')) window.location.replace('/login');
-    return res;
-};
+if (typeof window !== 'undefined') {   // absent when the UI tests load this file in node
+    const nativeFetch = window.fetch.bind(window);
+    window.fetch = async (...args) => {
+        const res = await nativeFetch(...args);
+        if (res.status === 401 && !String(args[0]).startsWith('/api/auth/')) window.location.replace('/login');
+        return res;
+    };
+}
 
 function autoPosterApp() {
     return {
@@ -19,7 +21,9 @@ function autoPosterApp() {
         passwordForm: { current: '', next: '', confirm: '' },
         loadedPageId: null, isLoadingPage: false, requestIds: {}, dataErrors: {},
         historySearch: '', historyStatus: '', topicsExpanded: false,
-        geminiState: 'Belum diverifikasi', openaiState: 'Belum diverifikasi', savingPageId: null,
+        // Last connection check per provider and the key/model snapshot it applies to.
+        providerChecks: { gemini: { state: 'Belum diverifikasi', for: null }, openai: { state: 'Belum diverifikasi', for: null } },
+        savingPageId: null,
         get draftDirty() {
             return this.currentPost && this.currentPost.status !== 'published' &&
                 this.draftSnapshot !== JSON.stringify([this.currentPost.visual_title, this.currentPost.caption]);
@@ -40,7 +44,17 @@ function autoPosterApp() {
             const missing = this.usedProviders.find(p => !this.settings[`${p}_api_key`]);
             return missing ? this.providerLabel(missing) : '';
         },
-        providerState(p) { return p === 'openai' ? this.openaiState : this.geminiState; },
+        providerSnapshot(p) {
+            return JSON.stringify(p === 'openai'
+                ? [this.settings.openai_api_key, this.settings.openai_text_model, this.settings.openai_image_model]
+                : [this.settings.gemini_api_key, this.settings.gemini_text_model]);
+        },
+        // A check only counts for the exact key and model(s) it tested.
+        providerState(p) {
+            const check = this.providerChecks[p];
+            return check.for === this.providerSnapshot(p) ? check.state : 'Belum diverifikasi';
+        },
+        recordCheck(p, state, snapshot) { this.providerChecks[p] = { state, for: snapshot }; },
         get aiState() {
             if (this.aiMissingKey) return 'Belum diisi';
             const states = this.usedProviders.map(p => this.providerState(p));
@@ -328,11 +342,6 @@ function autoPosterApp() {
             window.addEventListener('beforeunload', e => {
                 if (this.hasUnsavedChanges && !this.loggingOut) { e.preventDefault(); e.returnValue = ''; }
             });
-            this.$watch('settings.gemini_api_key', () => { this.geminiState = 'Belum diverifikasi'; });
-            this.$watch('settings.gemini_text_model', () => { this.geminiState = 'Belum diverifikasi'; });
-            this.$watch('settings.openai_api_key', () => { this.openaiState = 'Belum diverifikasi'; });
-            this.$watch('settings.openai_text_model', () => { this.openaiState = 'Belum diverifikasi'; });
-            this.$watch('settings.openai_image_model', () => { this.openaiState = 'Belum diverifikasi'; });
             this.fetchMe();
             await this.fetchSettings();
             this.windowDays = parseInt(this.settings.topic_window_days) || 7;
@@ -836,6 +845,10 @@ function autoPosterApp() {
                 const data = await res.json();
                 this.settings = { ...this.settings, ...data };
                 this.settingsDirty = false;
+                // The server remembers successful checks, so the status survives a reload.
+                for (const p of ['gemini', 'openai']) {
+                    this.recordCheck(p, data[`${p}_status`] || 'Belum diverifikasi', this.providerSnapshot(p));
+                }
             } catch (err) {
                 console.error('Error loading settings:', err);
                 this.showToast('Gagal memuat pengaturan dari server.', 'error');
@@ -888,7 +901,7 @@ function autoPosterApp() {
                 return;
             }
             this.isTestingGemini = true;
-            const tested = JSON.stringify([this.settings.gemini_api_key, this.settings.gemini_text_model]);
+            const tested = this.providerSnapshot('gemini');
             try {
                 const res = await fetch('/api/settings/test-gemini', {
                     method: 'POST',
@@ -899,10 +912,10 @@ function autoPosterApp() {
                     })
                 });
                 const data = await res.json();
-                if (tested === JSON.stringify([this.settings.gemini_api_key, this.settings.gemini_text_model])) this.geminiState = data.success ? 'Terhubung' : 'Gagal';
+                this.recordCheck('gemini', data.success ? 'Terhubung' : 'Gagal', tested);
                 this.showToast(data.message, data.success ? 'success' : 'error');
             } catch (err) {
-                this.geminiState = 'Gagal';
+                this.recordCheck('gemini', 'Gagal', tested);
                 this.showToast('Gagal mengetes Gemini API.', 'error');
             } finally {
                 this.isTestingGemini = false;
@@ -915,8 +928,7 @@ function autoPosterApp() {
                 return;
             }
             this.isTestingOpenai = true;
-            const snapshot = () => JSON.stringify([this.settings.openai_api_key, this.settings.openai_text_model, this.settings.openai_image_model]);
-            const tested = snapshot();
+            const tested = this.providerSnapshot('openai');
             try {
                 const res = await fetch('/api/settings/test-openai', {
                     method: 'POST',
@@ -928,10 +940,10 @@ function autoPosterApp() {
                     })
                 });
                 const data = await res.json();
-                if (tested === snapshot()) this.openaiState = data.success ? 'Terhubung' : 'Gagal';
+                this.recordCheck('openai', data.success ? 'Terhubung' : 'Gagal', tested);
                 this.showToast(data.message, data.success ? 'success' : 'error');
             } catch (err) {
-                this.openaiState = 'Gagal';
+                this.recordCheck('openai', 'Gagal', tested);
                 this.showToast('Gagal mengetes OpenAI API.', 'error');
             } finally {
                 this.isTestingOpenai = false;

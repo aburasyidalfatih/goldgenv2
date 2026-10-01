@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import os
 from pathlib import Path
@@ -287,6 +288,32 @@ async def serve_dashboard(request: Request):
 # ==========================================
 # REST API: SETTINGS & CREDENTIALS
 # ==========================================
+# A successful "Uji Koneksi" is remembered as a fingerprint of the exact key and
+# model(s) it tested, so the status survives a page reload and lapses by itself
+# as soon as the stored key or model differs from what was tested.
+VERIFIED_FP_KEY = {"gemini": "gemini_verified_fp", "openai": "openai_verified_fp"}
+_VERIFIED_FIELDS = {
+    "gemini": ("gemini_api_key", "gemini_text_model"),
+    "openai": ("openai_api_key", "openai_text_model", "openai_image_model"),
+}
+# Computed or internal: never written from the settings form.
+READ_ONLY_SETTING_KEYS = set(VERIFIED_FP_KEY.values()) | {f"{p}_status" for p in VERIFIED_FP_KEY}
+
+def _verification_fingerprint(*values: str) -> str:
+    return hashlib.sha256("".join(values).encode("utf-8")).hexdigest()
+
+def remember_verification(db: Session, provider: str, success: bool, *values: str):
+    key = VERIFIED_FP_KEY[provider]
+    row = db.query(AppSetting).filter(AppSetting.key == key).first() or AppSetting(key=key)
+    row.value = _verification_fingerprint(*values) if success else ""
+    db.add(row)
+    db.commit()
+
+def provider_status(db: Session, provider: str) -> str:
+    stored = get_setting(db, VERIFIED_FP_KEY[provider])
+    current = _verification_fingerprint(*(get_setting(db, k) for k in _VERIFIED_FIELDS[provider]))
+    return "Terhubung" if stored and get_setting(db, _VERIFIED_FIELDS[provider][0]) and stored == current         else "Belum diverifikasi"
+
 @app.get("/api/settings")
 def get_all_settings(db: Session = Depends(get_db)):
     """
@@ -296,10 +323,14 @@ def get_all_settings(db: Session = Depends(get_db)):
     settings_records = db.query(AppSetting).all()
     result = {}
     for s in settings_records:
+        if s.key in READ_ONLY_SETTING_KEYS:
+            continue
         if s.key in SENSITIVE_SETTING_KEYS and s.value:
             result[s.key] = SECRET_MASK
         else:
             result[s.key] = s.value
+    for provider in VERIFIED_FP_KEY:
+        result[f"{provider}_status"] = provider_status(db, provider)
     return result
 
 @app.post("/api/settings")
@@ -309,6 +340,8 @@ def save_settings(payload: Dict[str, Any], db: Session = Depends(get_db)):
             raise HTTPException(status_code=422, detail=f"Penyedia AI '{payload[role_key]}' tidak dikenal.")
     try:
         for k, v in payload.items():
+            if k in READ_ONLY_SETTING_KEYS:
+                continue
             # Masked secret came back untouched -> keep the stored value.
             if k in SENSITIVE_SETTING_KEYS and str(v) == SECRET_MASK:
                 continue
@@ -337,7 +370,10 @@ def test_gemini_endpoint(req: TestGeminiRequest, db: Session = Depends(get_db)):
     api_key = resolve_secret(db, "gemini_api_key", req.api_key)
     if not api_key:
         return {"success": False, "message": "Gemini API Key belum diisi."}
-    return test_gemini_key(api_key, req.model_name or DEFAULT_TEXT_MODEL)
+    model = req.model_name or DEFAULT_TEXT_MODEL
+    result = test_gemini_key(api_key, model)
+    remember_verification(db, "gemini", result.get("success", False), api_key, model)
+    return result
 
 class TestOpenAIRequest(BaseModel):
     api_key: str
@@ -349,9 +385,11 @@ def test_openai_endpoint(req: TestOpenAIRequest, db: Session = Depends(get_db)):
     api_key = resolve_secret(db, "openai_api_key", req.api_key)
     if not api_key:
         return {"success": False, "message": "OpenAI API Key belum diisi."}
-    return test_openai_key(api_key,
-                           req.text_model or DEFAULT_OPENAI_TEXT_MODEL,
-                           req.image_model or DEFAULT_OPENAI_IMAGE_MODEL)
+    text_model = req.text_model or DEFAULT_OPENAI_TEXT_MODEL
+    image_model = req.image_model or DEFAULT_OPENAI_IMAGE_MODEL
+    result = test_openai_key(api_key, text_model, image_model)
+    remember_verification(db, "openai", result.get("success", False), api_key, text_model, image_model)
+    return result
 
 # ==========================================
 # REST API: FANSPAGE MANAGEMENT
