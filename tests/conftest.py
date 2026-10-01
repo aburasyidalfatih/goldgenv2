@@ -221,6 +221,7 @@ def fake_gemini(monkeypatch):
 
     def generate_image(api_key, prompt, aspect_ratio="3:4", model_name="", provider="gemini", **kwargs):
         state["ratios"].append(aspect_ratio)
+        state.setdefault("image_kwargs", []).append(kwargs)
         state.setdefault("images", []).append({"provider": provider, "api_key": api_key,
                                                "model": model_name})
         filename = f"test_poster_{uuid.uuid4().hex[:8]}.jpg"

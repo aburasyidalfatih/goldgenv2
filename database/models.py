@@ -33,6 +33,7 @@ class FacebookPage(Base):
     # Per-page content preferences
     content_language = Column(String(10), default=DEFAULT_CONTENT_LANGUAGE)
     aspect_ratio = Column(String(10), default="3:4")
+    color_theme = Column(String(30), default="parchment")   # see core/poster_style.THEMES
     auto_post_times = Column(String(200), default="10:00,19:00")
     autopilot_enabled = Column(Boolean, default=False)
 

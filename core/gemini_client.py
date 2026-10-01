@@ -106,7 +106,8 @@ Your task is to create two things for a given gold prospecting topic:
      * A bold, aged slab-serif banner title at the top.
      * A 3D cutaway / cross-section diagram showing water dynamics (arrows for current speed), gravel stratification, and bedrock cracks trapping gold flakes.
      * Bottom section split into 4-5 identification panels / macro mineral photos (magnetite black sand, quartz, garnet, nuggets).
-     * Numbered field tips (1-5) and aged parchment/topographic aesthetic.
+     * Numbered field tips (1-5) and a vintage topographic field-guide aesthetic. Do not specify
+       colors or paper: the page's own color palette is added to the prompt separately.
 2. A viral, high-value Facebook Caption written in: {lang_prompt}.
    - The caption must include:
      * An attention-grabbing hook question.

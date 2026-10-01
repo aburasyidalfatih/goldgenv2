@@ -30,6 +30,7 @@ ADDED_COLUMNS = [
     ("facebook_pages", "reply_last_error", "TEXT"),
     ("facebook_pages", "focus_leader_key", "INTEGER"),
     ("facebook_pages", "focus_cursor", "INTEGER DEFAULT 0"),
+    ("facebook_pages", "color_theme", "VARCHAR(30) DEFAULT 'parchment'"),
 ]
 
 

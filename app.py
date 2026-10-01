@@ -53,6 +53,7 @@ from core.feedback_loop import (
 from core.topic_evolution import evolve_topics, retire_topic, reactivate_topic
 from core import comment_reply
 from core import auth
+from core.poster_style import THEMES
 from core.pages import (
     list_pages,
     get_page,
@@ -307,7 +308,7 @@ async def serve_dashboard(request: Request):
     return templates.TemplateResponse(
         request,
         "index.html",
-        {"asset_v": asset_version()}
+        {"asset_v": asset_version(), "themes": THEMES}
     )
 
 # ==========================================
@@ -767,6 +768,8 @@ def generate_content_endpoint(req: GenerateRequest, db: Session = Depends(get_db
             model_name=image_ai["model"],
             provider=image_ai["provider"],
             quality=image_ai["quality"],
+            theme=page.color_theme if page else None,
+            watermark=page.name if page else None,
         )
         img_path_sementara = img_path
 
@@ -962,6 +965,8 @@ def regenerate_image_endpoint(post_id: int, db: Session = Depends(get_db)):
             model_name=image_ai["model"],
             provider=image_ai["provider"],
             quality=image_ai["quality"],
+            theme=page.color_theme if page else None,
+            watermark=page.name if page else None,
         )
         post.image_filename = new_filename
         post.image_path = new_path

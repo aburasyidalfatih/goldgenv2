@@ -1179,6 +1179,24 @@
                             </div>
 
                             <div>
+                                <label :for="`theme-${p.id}`" class="block text-xs font-medium text-slate-300 mb-1">Tema Warna Poster</label>
+                                <select :id="`theme-${p.id}`" x-model="p.color_theme" @change="p.dirty = true"
+                                        class="w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:ring-2 focus:ring-gold-500/60">
+                                    {% for key, theme in themes.items() %}
+                                    <option value="{{ key }}">{{ theme.label }}</option>
+                                    {% endfor %}
+                                </select>
+                                <div class="flex items-center gap-2 mt-1.5">
+                                    {% for key, theme in themes.items() %}
+                                    <span x-show="p.color_theme === '{{ key }}'" class="flex gap-1" aria-hidden="true">
+                                        {% for color in theme.swatch %}<span class="w-4 h-4 rounded-full border border-white/20" style="background: {{ color }}"></span>{% endfor %}
+                                    </span>
+                                    {% endfor %}
+                                    <span class="text-xs text-slate-400" x-text="`Watermark: ${p.name} (pojok kanan bawah)`"></span>
+                                </div>
+                            </div>
+
+                            <div>
                                 <label :for="`times-${p.id}`" class="block text-xs font-medium text-slate-300 mb-1">
                                     Jam Posting Otomatis
                                     <span class="text-slate-400 font-normal" x-text="`(${schedule.timezone || 'server'})`"></span>

@@ -132,6 +132,8 @@ def auto_generate_and_post_job(page_row_id: int):
             model_name=image_ai["model"],
             provider=image_ai["provider"],
             quality=image_ai["quality"],
+            theme=page.color_theme if page else None,
+            watermark=page.name if page else None,
         )
         poster_sementara = abspath
 

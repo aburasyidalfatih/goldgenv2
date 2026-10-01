@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from config import SECRET_MASK, DEFAULT_CONTENT_LANGUAGE
 from core.utils import iso_utc
+from core.poster_style import THEMES, normalize_theme
 from database.models import ContentTopic, FacebookPage, Post, PageTopicWeight, CommentReply
 from core.fb_client import test_facebook_credentials
 
@@ -38,6 +39,7 @@ def serialize_page(page: FacebookPage, db: Session | None = None) -> dict:
         "access_token": SECRET_MASK if page.access_token else "",
         "content_language": page.content_language or DEFAULT_CONTENT_LANGUAGE,
         "aspect_ratio": page.aspect_ratio or "3:4",
+        "color_theme": normalize_theme(page.color_theme),
         "auto_post_times": page.auto_post_times or "10:00,19:00",
         "autopilot_enabled": bool(page.autopilot_enabled),
         "is_active": page.is_active is not False,
@@ -152,6 +154,11 @@ def update_page(db: Session, page_row_id: int, payload: dict) -> dict:
     for key, caster in editable.items():
         if key in payload and payload[key] is not None:
             setattr(page, key, caster(payload[key]) if caster is not bool else bool(payload[key]))
+
+    if payload.get("color_theme") is not None:
+        if payload["color_theme"] not in THEMES:
+            return {"success": False, "message": "Tema warna tidak dikenal."}
+        page.color_theme = payload["color_theme"]
 
     # Comment auto-reply preferences
     if payload.get("auto_reply_enabled") is not None:

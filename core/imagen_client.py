@@ -6,14 +6,16 @@ from google import genai
 from google.genai import types
 from config import IMAGES_DIR, DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_FALLBACK_MODEL
 from core import openai_client
+from core.poster_style import apply_watermark, theme_prompt
 
 logger = logging.getLogger(__name__)
 
-# Enhance every prompt for the vintage field guide look
+# Enhance every prompt for the vintage field guide look. Colors come from the
+# Fanspage's theme (core.poster_style), appended after this.
 AESTHETIC_ENHANCER = (
     " Highly detailed vintage geological field guide poster, national park educational chart aesthetic. "
     "Sharp typography, isometric river cutaway diagram, macro mineral texture photography, "
-    "aged paper parchment background, crisp contrast, museum quality informational graphic."
+    "crisp contrast, museum quality informational graphic."
 )
 
 
@@ -71,17 +73,22 @@ def generate_poster_image(
     model_name: str = DEFAULT_IMAGE_MODEL,
     provider: str = "gemini",
     quality: str | None = None,
+    theme: str | None = None,
+    watermark: str | None = None,
 ) -> tuple[str, str]:
     """
     Generates an educational infographic poster. With provider 'gemini' it uses
     Gemini image models or Imagen, falling back to the other family if the primary
     model fails; with 'openai' it uses the configured OpenAI image model.
+
+    `theme` is the Fanspage's color theme; `watermark` (the Fanspage name) is
+    stamped in the bottom-right corner of the finished poster.
     Returns:
         (image_filename, absolute_path)
     """
     filename = f"gold_poster_{uuid.uuid4().hex[:10]}.jpg"
     filepath = IMAGES_DIR / filename
-    full_prompt = prompt + AESTHETIC_ENHANCER
+    full_prompt = prompt + AESTHETIC_ENHANCER + theme_prompt(theme)
 
     logger.info(f"Generating image with {provider}:{model_name}, aspect_ratio={aspect_ratio}...")
 
@@ -93,6 +100,7 @@ def generate_poster_image(
         except Exception as err:
             raise RuntimeError(f"Gagal menghasilkan gambar. {model_name}: {err}") from err
         logger.info(f"OpenAI image ({model_name}) saved to {filepath}")
+        apply_watermark(filepath, watermark)
         return filename, str(filepath)
 
     if not api_key:
@@ -116,6 +124,7 @@ def generate_poster_image(
                 saved = _generate_via_imagen(client, route_model, full_prompt, aspect_ratio, filepath)
 
             if saved:
+                apply_watermark(filepath, watermark)
                 return filename, str(filepath)
 
             errors.append(f"{route_model}: tidak mengembalikan data gambar")

@@ -543,7 +543,7 @@ function autoPosterApp() {
             if (this.savingPageId) return;
             this.savingPageId = page.id;
             try {
-                const before = JSON.stringify([page.content_language, page.aspect_ratio, page.auto_post_times, page.autopilot_enabled, page.is_active]);
+                const before = JSON.stringify([page.content_language, page.aspect_ratio, page.color_theme, page.auto_post_times, page.autopilot_enabled, page.is_active]);
                 const res = await fetch(`/api/pages/${page.id}`, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
@@ -551,6 +551,7 @@ function autoPosterApp() {
                         name: page.name,
                         content_language: page.content_language,
                         aspect_ratio: page.aspect_ratio,
+                        color_theme: page.color_theme,
                         auto_post_times: page.auto_post_times,
                         autopilot_enabled: page.autopilot_enabled,
                         is_active: page.is_active
@@ -558,7 +559,7 @@ function autoPosterApp() {
                 });
                 const data = await res.json();
                 if (data.success) {
-                    page.dirty = before !== JSON.stringify([page.content_language, page.aspect_ratio, page.auto_post_times, page.autopilot_enabled, page.is_active]);
+                    page.dirty = before !== JSON.stringify([page.content_language, page.aspect_ratio, page.color_theme, page.auto_post_times, page.autopilot_enabled, page.is_active]);
                     await this.fetchScheduleStatus();
                     this.showToast(`Pengaturan '${page.name}' disimpan.`);
                 } else {
