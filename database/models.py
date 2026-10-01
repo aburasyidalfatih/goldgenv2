@@ -81,7 +81,7 @@ class ContentTopic(Base):
     __tablename__ = "content_topics"
 
     id = Column(Integer, primary_key=True, index=True)
-    category = Column(String(50), index=True)  # Fluvial, Geology, Minerals, Strategy
+    category = Column(String(50), index=True)  # see SEED_TOPICS categories in core/taxonomy.py
     topic_key = Column(String(100), unique=True, index=True)
     title = Column(String(200), nullable=False)
     core_concept = Column(Text, nullable=False)

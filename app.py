@@ -29,7 +29,7 @@ from config import (
 from database.db_session import engine, Base, get_db, SessionLocal
 from database.migrations import run_migrations, migrate_single_page_to_multi
 from database.models import AppSetting, ContentTopic, Post, FacebookPage, PageTopicWeight, CommentReply
-from core.taxonomy import seed_taxonomy_if_empty
+from core.taxonomy import seed_base_curriculum
 from core.utils import iso_utc
 from core.maintenance import remove_generated_image, cleanup_orphan_images
 from core.gemini_client import test_gemini_key, generate_post_content, template_content
@@ -107,8 +107,10 @@ async def lifespan(app: FastAPI):
             existing = db.query(AppSetting).filter(AppSetting.key == k).first()
             if not existing:
                 db.add(AppSetting(key=k, value=str(v)))
-        # Seed 10 gold topics
-        seed_taxonomy_if_empty(db)
+        # Base curriculum: adds any base topic this database does not have yet
+        added = seed_base_curriculum(db)
+        if added:
+            logger.info(f"Added {len(added)} base topic(s) to the curriculum.")
         # A post left in "publishing" means the app stopped mid-upload. Whether
         # Facebook received it is unknown, so flag it instead of retrying blindly.
         stuck = db.query(Post).filter(Post.status == "publishing").all()

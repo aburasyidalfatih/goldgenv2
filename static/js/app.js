@@ -714,7 +714,9 @@ function autoPosterApp() {
                 Fluvial: 'bg-blue-500/10 text-blue-300 border-blue-500/30',
                 Geology: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
                 Minerals: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30',
-                Strategy: 'bg-purple-500/10 text-purple-300 border-purple-500/30'
+                Strategy: 'bg-purple-500/10 text-purple-300 border-purple-500/30',
+                Equipment: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30',
+                'Rules & Value': 'bg-rose-500/10 text-rose-300 border-rose-500/30'
             }[category] || 'bg-slate-700/40 text-slate-300 border-slate-600/40';
         },
 

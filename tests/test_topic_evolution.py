@@ -10,6 +10,7 @@ from core.topic_evolution import (
     retire_topic,
     validate_variant,
 )
+from core.taxonomy import SEED_TOPICS
 from database.models import ContentTopic
 
 
@@ -65,7 +66,7 @@ def test_seluruh_kurikulum_dasar_dikirim_sebagai_materi_belajar(client, make_pag
     evolve_topics(db, api_key="k", page_id=page["id"],
                   generator=_stub_generator([_variant()], capture))
 
-    assert len(capture["curriculum"]) == 10
+    assert len(capture["curriculum"]) == len(SEED_TOPICS)
     assert "KURIKULUM DASAR" in capture["prompt"]
     assert topics[0].core_concept[:60] in capture["prompt"]
 
@@ -194,7 +195,7 @@ def test_pohon_kurikulum_menampilkan_induk_dan_turunan(client, make_page, make_p
 
     pohon = client.get("/api/topics/curriculum").json()
 
-    assert pohon["base_count"] == 10
+    assert pohon["base_count"] == len(SEED_TOPICS)
     assert pohon["variant_count"] == 1
     assert pohon["unlinked_variants"] == []
     cabang = [b for b in pohon["curriculum"] if b["id"] == induk.id][0]

@@ -17,10 +17,13 @@ from config import DEFAULT_TEXT_MODEL, DEFAULT_CONTENT_LANGUAGE
 from database.models import ContentTopic
 from core.ai_provider import complete_json
 from core.feedback_loop import window_performance
+from core.taxonomy import SEED_TOPICS
 
 logger = logging.getLogger(__name__)
 
-ALLOWED_CATEGORIES = {"Fluvial", "Geology", "Minerals", "Strategy"}
+# Same categories as the base curriculum, so variants group with their bases.
+ALLOWED_CATEGORIES = sorted({t["category"] for t in SEED_TOPICS})
+CATEGORY_CHOICES = " | ".join(ALLOWED_CATEGORIES)
 
 # Starting weight for a new variant: above the 1.0 baseline (it descends from a
 # proven winner) but below a topic that has actually earned its numbers.
@@ -105,7 +108,7 @@ Balas HANYA dengan JSON valid dengan bentuk:
   "topics": [
     {{
       "base_topic": "Judul PERSIS salah satu materi dasar di kurikulum di atas",
-      "category": "Fluvial | Geology | Minerals | Strategy",
+      "category": "{CATEGORY_CHOICES}",
       "title": "Judul topik yang spesifik dan menggugah rasa ingin tahu",
       "core_concept": "2-4 kalimat menjelaskan prinsip geologi/hidrolika di baliknya, termasuk angka atau mekanisme konkret.",
       "visual_blueprint": "Deskripsi detail poster infografis: judul banner, diagram penampang, panah aliran, panel identifikasi mineral, tekstur kertas tua.",
