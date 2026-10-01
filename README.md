@@ -152,7 +152,7 @@ Repository ini siap di-deploy ke **Dokploy** sebagai *Application* (Dockerfile):
    ```env
    AUTOPOSTER_ADMIN_EMAIL=email@anda.com
    AUTOPOSTER_ADMIN_PASSWORD=password-awal-yang-panjang
-   SCHEDULER_TIMEZONE=America/New_York
+   SCHEDULER_TIMEZONE=Asia/Jakarta
    ```
    Akun login dibuat otomatis saat start pertama **hanya bila database belum punya akun**. Setelah berhasil login, hapus `AUTOPOSTER_ADMIN_PASSWORD` dari Dokploy dan ganti password lewat **Pengaturan → Akun Login**.
    `SCHEDULER_TIMEZONE` menentukan zona waktu jam posting Autopilot (default `Asia/Jakarta`).
