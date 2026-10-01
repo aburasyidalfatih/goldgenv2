@@ -59,6 +59,10 @@ DEFAULT_SETTINGS = {
     "openai_image_model": DEFAULT_OPENAI_IMAGE_MODEL,
     "text_provider": "gemini",    # 'gemini' | 'openai' — writes concept & caption
     "image_provider": "gemini",   # 'gemini' | 'openai' — renders the poster
+    # Cost controls: how much the text model "thinks" (thinking tokens are billed as
+    # output) and the OpenAI image quality (decides how many image tokens are spent).
+    "text_reasoning": "low",          # 'low' | 'medium' | 'high'
+    "openai_image_quality": "medium", # 'low' | 'medium' | 'high' | 'auto'
     "fb_page_id": "",
     "fb_page_access_token": "",
     "fb_page_name": "",

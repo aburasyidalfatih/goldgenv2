@@ -230,3 +230,99 @@ def test_model_pilihan_sendiri_yang_masih_aktif_tidak_disentuh(client, db):
     assert row.value == "gpt-6-luna"
     assert DEFAULT_OPENAI_TEXT_MODEL not in OPENAI_RETIRED_MODELS
     assert DEFAULT_OPENAI_IMAGE_MODEL not in OPENAI_RETIRED_MODELS
+
+
+# ------------------------------------------------------------ kendali biaya
+
+
+def test_tingkat_penalaran_dikirim_dan_dibuang_bila_model_menolak(monkeypatch):
+    bodies = []
+
+    def post(url, headers, json, timeout):
+        bodies.append(dict(json))
+        if "reasoning_effort" in json:
+            return FakeResponse(400, {"error": {"message": "Unrecognized request argument: reasoning_effort"}})
+        return FakeResponse(200, {"choices": [{"finish_reason": "stop", "message": {"content": "{}"}}]})
+
+    monkeypatch.setattr(openai_client.requests, "post", post)
+    openai_client.complete_json("sk-x", "model-lama", "s", "u", 0.7, reasoning="low")
+
+    assert bodies[0]["reasoning_effort"] == "low"
+    assert "reasoning_effort" not in bodies[-1]
+    assert bodies[-1]["temperature"] == 0.7      # parameter lain tidak ikut dibuang
+
+
+def test_temperature_dan_penalaran_ditolak_berurutan_tetap_berhasil(monkeypatch):
+    calls = []
+
+    def post(url, headers, json, timeout):
+        calls.append(dict(json))
+        if "temperature" in json:
+            return FakeResponse(400, {"error": {"message": "Unsupported value: 'temperature'"}})
+        return FakeResponse(200, {"choices": [{"finish_reason": "stop", "message": {"content": '{"a": 1}'}}]})
+
+    monkeypatch.setattr(openai_client.requests, "post", post)
+    assert openai_client.complete_json("sk-x", "gpt-6.1-sol", "s", "u", 0.7, reasoning="low") == '{"a": 1}'
+    assert calls[-1]["reasoning_effort"] == "low" and "temperature" not in calls[-1]
+
+
+def test_kualitas_gambar_dikirim_kecuali_dall_e(monkeypatch):
+    dikirim = []
+
+    def post(url, headers, json, timeout):
+        dikirim.append(dict(json))
+        return FakeResponse(200, {"data": [{"b64_json": _png_b64()}]})
+
+    monkeypatch.setattr(openai_client.requests, "post", post)
+    openai_client.generate_image_bytes("sk-x", "gpt-image-2.5-flare", "poster", "3:4", quality="medium")
+    openai_client.generate_image_bytes("sk-x", "dall-e-3", "poster", "3:4", quality="medium")
+
+    assert dikirim[0]["quality"] == "medium"
+    assert "quality" not in dikirim[1]
+
+
+def test_setelan_biaya_sampai_ke_pemanggilan_api(client, make_page, fake_gemini, with_openai, db):
+    """Default hemat: penalaran rendah untuk teks, kualitas sedang untuk gambar OpenAI."""
+    from core.ai_provider import ai_backend
+    make_page("111")
+
+    assert ai_backend(db, "text")["reasoning"] == "low"
+    assert ai_backend(db, "image")["quality"] == "medium"
+    _set(db, "text_reasoning", "ngawur")
+    assert ai_backend(db, "text")["reasoning"] == "low", "nilai tak dikenal jatuh ke default hemat"
+    _set(db, "text_reasoning", "low")
+
+
+def test_gemini_menerima_tingkat_berpikir_dan_mundur_bila_tidak_didukung(monkeypatch):
+    import core.ai_provider as provider
+
+    configs = []
+
+    class Models:
+        def generate_content(self, model, contents, config):
+            configs.append(config.thinking_config)
+            if config.thinking_config is not None:
+                raise ValueError("thinking_level is not supported for this model")
+            return type("R", (), {"text": '{"ok": true}'})()
+
+    monkeypatch.setattr(provider.genai, "Client", lambda api_key: type("C", (), {"models": Models()})())
+    raw = provider.complete_json("gemini", "k", "gemini-2.5-flash", "s", "u", 0.7, reasoning="low")
+
+    assert raw == '{"ok": true}'
+    assert configs[0].thinking_level.value == "LOW" and configs[1] is None
+
+
+def test_rasio_poster_dikirim_ke_model_gambar_gemini(tmp_dir):
+    """Regresi: rasio Fanspage dulu tidak pernah dikirim, sehingga Gemini memakai rasionya sendiri."""
+    from core import imagen_client
+    dipakai = {}
+
+    class Models:
+        def generate_content(self, model, contents, config):
+            dipakai["rasio"] = config.image_config.aspect_ratio
+            return type("R", (), {"candidates": []})()
+
+    client = type("C", (), {"models": Models()})()
+    imagen_client._generate_via_gemini(client, "gemini-3.1-flash-image", "poster", "3:4", tmp_dir / "x.jpg")
+
+    assert dipakai["rasio"] == "3:4"

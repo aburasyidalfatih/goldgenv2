@@ -121,7 +121,8 @@ def auto_generate_and_post_job(page_row_id: int):
 
         # 2. Generate copy & prompt
         content = generate_post_content(text_ai["api_key"], topic_dict, language=lang,
-                                        model_name=text_ai["model"], provider=text_ai["provider"])
+                                        model_name=text_ai["model"], provider=text_ai["provider"],
+                                        reasoning=text_ai["reasoning"])
 
         # 3. Render the poster
         filename, abspath = generate_poster_image(
@@ -130,6 +131,7 @@ def auto_generate_and_post_job(page_row_id: int):
             aspect_ratio=aspect_ratio,
             model_name=image_ai["model"],
             provider=image_ai["provider"],
+            quality=image_ai["quality"],
         )
         poster_sementara = abspath
 
@@ -272,6 +274,7 @@ def stock_focus_variants(db) -> dict:
                 api_key=text_ai["api_key"],
                 model_name=text_ai["model"],
                 provider=text_ai["provider"],
+                reasoning=text_ai["reasoning"],
                 window_days=window_days,
                 max_new=max_new,
                 language=page.content_language or DEFAULT_CONTENT_LANGUAGE,

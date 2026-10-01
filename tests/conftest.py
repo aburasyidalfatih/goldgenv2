@@ -206,7 +206,7 @@ def fake_gemini(monkeypatch):
     """Content generation stand-in, so no API key or quota is needed."""
     state = {"calls": [], "ratios": []}
 
-    def generate_content(api_key, topic_dict, language="id", model_name="", provider="gemini"):
+    def generate_content(api_key, topic_dict, language="id", model_name="", provider="gemini", **kwargs):
         state["calls"].append({"topic": topic_dict["title"], "language": language,
                                "provider": provider, "api_key": api_key, "model": model_name})
         # Unique per call: two generations can pick the same topic, and tests that
@@ -219,7 +219,7 @@ def fake_gemini(monkeypatch):
             "caption": f"caption #{n} {language} untuk {topic_dict['title']}",
         }
 
-    def generate_image(api_key, prompt, aspect_ratio="3:4", model_name="", provider="gemini"):
+    def generate_image(api_key, prompt, aspect_ratio="3:4", model_name="", provider="gemini", **kwargs):
         state["ratios"].append(aspect_ratio)
         state.setdefault("images", []).append({"provider": provider, "api_key": api_key,
                                                "model": model_name})

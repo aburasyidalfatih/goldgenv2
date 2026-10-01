@@ -318,7 +318,8 @@ def test_balasan_dirapikan_maksimal_dua_kalimat(mentah, hasil):
 def test_generate_memakai_penyedia_teks_dan_membatasi_kalimat(monkeypatch):
     dipanggil = {}
 
-    def palsu(provider, api_key, model, system, user, temperature):
+    def palsu(provider, api_key, model, system, user, temperature, reasoning=None):
+        dipanggil["reasoning"] = reasoning
         dipanggil.update(provider=provider, system=system, user=user)
         return json.dumps({"skip": False, "reason": "",
                            "reply": "Wah keren. Itu tanda bagus. Lanjutkan. Semangat!"})

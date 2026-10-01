@@ -600,6 +600,7 @@ def evolve_topics_endpoint(page: Optional[int] = None, db: Session = Depends(get
         api_key=text_ai["api_key"],
         model_name=text_ai["model"],
         provider=text_ai["provider"],
+        reasoning=text_ai["reasoning"],
         window_days=get_int_setting(db, "topic_window_days", 7, 1, 90),
         max_new=get_int_setting(db, "max_new_topics_per_cycle", 2, 1, 5),
         language=(target.content_language if target else None) or DEFAULT_CONTENT_LANGUAGE,
@@ -755,6 +756,7 @@ def generate_content_endpoint(req: GenerateRequest, db: Session = Depends(get_db
             language=language,
             model_name=text_ai["model"],
             provider=text_ai["provider"],
+            reasoning=text_ai["reasoning"],
         )
 
         # 3. Generate Poster Image
@@ -764,6 +766,7 @@ def generate_content_endpoint(req: GenerateRequest, db: Session = Depends(get_db
             aspect_ratio=aspect_ratio,
             model_name=image_ai["model"],
             provider=image_ai["provider"],
+            quality=image_ai["quality"],
         )
         img_path_sementara = img_path
 
@@ -958,6 +961,7 @@ def regenerate_image_endpoint(post_id: int, db: Session = Depends(get_db)):
             aspect_ratio=aspect_ratio,
             model_name=image_ai["model"],
             provider=image_ai["provider"],
+            quality=image_ai["quality"],
         )
         post.image_filename = new_filename
         post.image_path = new_path
@@ -1009,6 +1013,7 @@ def regenerate_caption_endpoint(post_id: int, db: Session = Depends(get_db)):
             language=language,
             model_name=text_ai["model"],
             provider=text_ai["provider"],
+            reasoning=text_ai["reasoning"],
         )
     except Exception as e:
         logger.exception("Regenerate caption error")

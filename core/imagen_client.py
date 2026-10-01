@@ -24,12 +24,18 @@ def _save_jpeg(image_bytes: bytes, filepath) -> None:
     img.save(filepath, format="JPEG", quality=95)
 
 
-def _generate_via_gemini(client, model_name: str, prompt: str, filepath) -> bool:
-    """Native Gemini image model route. Returns True if an image was saved."""
+def _generate_via_gemini(client, model_name: str, prompt: str, aspect_ratio: str, filepath) -> bool:
+    """
+    Native Gemini image model route. Returns True if an image was saved. The
+    Fanspage's aspect ratio is sent explicitly; without it the model picks its own.
+    """
     response = client.models.generate_content(
         model=model_name,
         contents=prompt,
-        config=types.GenerateContentConfig(response_modalities=["IMAGE"])
+        config=types.GenerateContentConfig(
+            response_modalities=["IMAGE"],
+            image_config=types.ImageConfig(aspect_ratio=aspect_ratio),
+        ),
     )
     for candidate in response.candidates or []:
         for part in candidate.content.parts or []:
@@ -64,6 +70,7 @@ def generate_poster_image(
     aspect_ratio: str = "3:4",
     model_name: str = DEFAULT_IMAGE_MODEL,
     provider: str = "gemini",
+    quality: str | None = None,
 ) -> tuple[str, str]:
     """
     Generates an educational infographic poster. With provider 'gemini' it uses
@@ -80,7 +87,8 @@ def generate_poster_image(
 
     if provider == "openai":
         try:
-            image_bytes = openai_client.generate_image_bytes(api_key, model_name, full_prompt, aspect_ratio)
+            image_bytes = openai_client.generate_image_bytes(api_key, model_name, full_prompt, aspect_ratio,
+                                                             quality=quality)
             _save_jpeg(image_bytes, filepath)
         except Exception as err:
             raise RuntimeError(f"Gagal menghasilkan gambar. {model_name}: {err}") from err
@@ -103,7 +111,7 @@ def generate_poster_image(
     for route, route_model in (primary, fallback):
         try:
             if route is _generate_via_gemini:
-                saved = _generate_via_gemini(client, route_model, full_prompt, filepath)
+                saved = _generate_via_gemini(client, route_model, full_prompt, aspect_ratio, filepath)
             else:
                 saved = _generate_via_imagen(client, route_model, full_prompt, aspect_ratio, filepath)
 

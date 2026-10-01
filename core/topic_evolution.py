@@ -132,6 +132,7 @@ def generate_topic_variants(
     base_curriculum: list = None,
     window_days: int = 7,
     provider: str = "gemini",
+    reasoning: str | None = None,
 ) -> list:
     """Calls the chosen text model and returns the raw list of proposed topic dicts."""
     system_instruction = (
@@ -146,6 +147,7 @@ def generate_topic_variants(
         provider, api_key, model_name, system_instruction,
         build_evolution_prompt(winners, existing_titles, max_new, language, base_curriculum, window_days),
         0.9,  # higher: we want genuinely new angles
+        reasoning=reasoning,
     )
     if not raw:
         raise RuntimeError("Model AI tidak mengembalikan usulan topik apapun.")
@@ -260,6 +262,7 @@ def evolve_topics(
     generator=generate_topic_variants,
     provider: str = "gemini",
     winner_ids: list | None = None,
+    reasoning: str | None = None,
 ) -> dict:
     """
     Creates up to `max_new` close variants (about 90% the same subject) of a
@@ -326,6 +329,7 @@ def evolve_topics(
             base_curriculum=base_curriculum,
             window_days=window_days,
             provider=provider,
+            reasoning=reasoning,
         )
     except Exception as e:
         logger.exception("Topic evolution failed")

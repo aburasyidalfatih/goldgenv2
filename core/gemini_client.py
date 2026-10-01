@@ -77,7 +77,8 @@ def template_content(topic_dict: dict, language: str = DEFAULT_CONTENT_LANGUAGE)
     }
 
 def generate_post_content(api_key: str, topic_dict: dict, language: str = DEFAULT_CONTENT_LANGUAGE,
-                          model_name: str = DEFAULT_TEXT_MODEL, provider: str = "gemini") -> dict:
+                          model_name: str = DEFAULT_TEXT_MODEL, provider: str = "gemini",
+                          reasoning: str | None = None) -> dict:
     """
     Generates structured infographic blueprint prompt and Facebook caption with the
     chosen text provider ('gemini' or 'openai').
@@ -135,7 +136,8 @@ Tolong buatkan visual prompt Imagen 3 dan caption Facebook yang berkualitas ting
 
     # API/network/auth errors are intentionally NOT caught here: they must surface
     # to the caller instead of being masked by generic fallback copy.
-    raw_text = complete_json(provider, api_key, model_name, system_instruction, user_prompt, 0.7)
+    raw_text = complete_json(provider, api_key, model_name, system_instruction, user_prompt, 0.7,
+                             reasoning=reasoning)
     if not raw_text:
         raise RuntimeError(
             f"{PROVIDER_LABELS.get(provider, provider)} tidak mengembalikan teks apapun "

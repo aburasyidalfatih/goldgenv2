@@ -287,6 +287,8 @@ function autoPosterApp() {
             openai_api_key: '',
             openai_text_model: 'gpt-6.1-sol',
             openai_image_model: 'gpt-image-2.5-flare',
+            text_reasoning: 'low',
+            openai_image_quality: 'medium',
             text_provider: 'gemini',
             image_provider: 'gemini',
             auto_topic_evolution: 'true',

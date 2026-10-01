@@ -33,7 +33,7 @@ def _variant(title="Rasio Pasir Hitam: Menakar Kepadatan Jebakan Emas", base=Non
 
 def _stub_generator(proposals, capture=None):
     def generator(api_key, winners, existing_titles, max_new, model_name, language,
-                  base_curriculum, window_days, provider="gemini"):
+                  base_curriculum, window_days, provider="gemini", **_):
         if capture is not None:
             capture.update(
                 winners=winners,

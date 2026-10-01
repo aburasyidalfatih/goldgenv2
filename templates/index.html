@@ -1300,6 +1300,19 @@
                         Hanya kunci penyedia yang dipilih yang wajib diisi. Pilihan ini dipakai oleh generate manual,
                         render ulang, autopilot, dan evolusi topik.
                     </p>
+                    <div>
+                        <label for="text-reasoning" class="block text-xs font-medium text-slate-200 mb-1">Tingkat Penalaran Teks</label>
+                        <select id="text-reasoning" x-model="settings.text_reasoning" @change="settingsDirty = true"
+                                class="w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/60 text-slate-200">
+                            <option value="low">Rendah ⭐ — paling hemat, cukup untuk caption</option>
+                            <option value="medium">Sedang</option>
+                            <option value="high">Tinggi — paling mahal</option>
+                        </select>
+                        <p class="text-xs text-slate-400 mt-1">
+                            Seberapa banyak model "berpikir" sebelum menulis caption, balasan komentar, dan topik baru
+                            (Gemini maupun OpenAI). Token berpikir ditagih sebagai output, jadi Rendah paling murah.
+                        </p>
+                    </div>
                 </div>
 
                 <!-- 1a. Gemini -->
@@ -1344,7 +1357,8 @@
                             <label for="image-model" class="block text-xs font-medium text-slate-200 mb-1">Model Gambar / Poster</label>
                             <select id="image-model" x-model="settings.gemini_image_model" @change="settingsDirty = true"
                                     class="w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/60 text-slate-200">
-                                <option value="gemini-3.1-flash-image">gemini-3.1-flash-image ⭐</option>
+                                <option value="gemini-3.1-flash-image">gemini-3.1-flash-image ⭐ — ±$0,067/gambar</option>
+                                <option value="gemini-3.1-flash-lite-image">gemini-3.1-flash-lite-image — hemat, ±$0,034/gambar</option>
                                 <option value="gemini-3-pro-image">gemini-3-pro-image</option>
                                 <option value="imagen-3.0-generate-002">imagen-3.0-generate-002</option>
                             </select>
@@ -1416,7 +1430,18 @@
                                    class="mt-2 w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/60 text-slate-200 font-mono">
                         </div>
                     </div>
+                    <div>
+                        <label for="openai-image-quality" class="block text-xs font-medium text-slate-200 mb-1">Kualitas Gambar OpenAI</label>
+                        <select id="openai-image-quality" x-model="settings.openai_image_quality" @change="settingsDirty = true"
+                                class="w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/60 text-slate-200">
+                            <option value="low">Rendah — ±$0,005/gambar</option>
+                            <option value="medium">Sedang ⭐ — ±$0,04/gambar</option>
+                            <option value="high">Tinggi — ±$0,165/gambar</option>
+                            <option value="auto">Otomatis — model yang memilih, biaya tak terduga</option>
+                        </select>
+                    </div>
                     <p class="text-xs text-slate-400">
+                        Perkiraan harga untuk poster 1024×1536 dengan gpt-image-2.5-flare.
                         Daftar model OpenAI per Oktober 2026. Model lama (gpt-5-mini, gpt-image-1, dall-e) sudah atau akan
                         dihentikan OpenAI dan otomatis diganti. Pakai "Model lain…" bila akun Anda punya akses ke model yang
                         lebih baru, lalu klik Uji Koneksi. Poster OpenAI dibuat di kanvas potret 2:3, persegi, atau lanskap
