@@ -35,17 +35,16 @@ Aplikasi cerdas untuk memproduksi konten edukasi visual (poster infografis geolo
    * **Dialog konfirmasi sebelum publish** — menampilkan nama Fanspage tujuan dan cuplikan caption.
    * **Anti publish ganda**: postingan dikunci dengan status *Sedang Dipublikasikan* selama unggahan berlangsung, jadi klik ganda atau dua tab terbuka tidak pernah menghasilkan postingan kembar di Facebook. Bila aplikasi mati di tengah unggahan, postingan ditandai *Gagal* dengan peringatan untuk memeriksa Fanspage sebelum publish ulang.
    * Buka ulang postingan lama dari Riwayat ke Studio, render ulang gambar, atau hapus draft (beserta file posternya).
-4. **Feedback Learning Loop (Kecerdasan Adaptif)**:
-   * Menghitung skor performa postingan: $\text{Score} = (\text{Shares} \times 4) + (\text{Comments} \times 3) + (\text{Reactions} \times 1.5) + (\text{Reach} \times 0.05)$.
-   * Aturan **70% Exploit** (memperbanyak variasi topik pemenang) dan **30% Explore** (menguji topik baru).
-   * Visual leaderboard bobot topik yang terus diperbarui.
-   * **Bobot berbasis jendela waktu**: performa 7 hari terakhir menentukan 70% bobot, riwayat seumur hidup 30%. Topik yang tidak tayang dalam periode analisis dibatasi di bobot 0.95 — tepat di bawah titik netral — sehingga juara lama maupun topik yang belum pernah dicoba tidak bisa mengalahkan topik yang sedang perform.
-   * Bobot bersifat **relatif terhadap rata-rata** (1.0 = rata-rata minggu ini), jadi skalanya tetap masuk akal baik jangkauan halaman Anda ratusan maupun ratusan ribu.
-   * Bila hanya **satu topik** yang tayang minggu itu, ia dibandingkan dengan postingan tipikal halaman sebelumnya (median 60 hari) — pemenang jelas mendapat bobot tinggi, yang hasilnya jeblok tetap di 1.0 tanpa didongkrak.
-   * Kartu **Topik Pemenang** selalu menampilkan topik yang benar-benar diprioritaskan mesin pembelajaran, dan *Belum cukup data* sebelum ada metrik.
+4. **Feedback Learning Loop (Kecerdasan Adaptif)** — tiap Fanspage belajar dari **reach**-nya sendiri, dalam dua tahap:
+   * **Tahap Uji**: setiap topik dasar diposting **tepat sekali** di Fanspage itu (urutan acak, tanpa pengulangan) sebelum ada topik yang diulang. Kartu Analitik menampilkan progresnya, mis. *12/33*.
+   * **Tahap Fokus** (setelah semua teruji): 90% postingan **merotasi 3 pemenang reach teratas** — #1 → #2 → #3 → #1 … Untuk setiap pemenang, **variasi AI yang belum tayang dipakai lebih dulu** (±90% mirip); bila habis, topik pemenang itu sendiri diposting ulang dengan caption & poster baru. 10% sisanya tetap eksplorasi topik yang paling jarang dipakai, untuk menangkap perubahan selera audiens.
+   * **Pemenang baru**: peringkat dihitung ulang tiap malam dari rata-rata reach. Bila #1 berganti (mis. sebuah variasi menyalip pemenang lama), rotasi dimulai lagi dari #1 yang baru.
+   * **Hanya reach yang menilai**, dan hanya dari postingan berumur **≥ 48 jam** (reach masih naik sehari-dua setelah tayang). Bobot = rata-rata reach topik dibanding rata-rata semua topik terukur di halaman itu; bila topik baru saja diposting ulang, angka terbarunya diberi porsi 70%.
+   * **Stok variasi**: tiap malam (setelah sinkron metrik pukul 03:00), pemenang rotasi yang kehabisan variasi belum-tayang dibuatkan variasi baru oleh AI — pertama kali tepat setelah Tahap Uji selesai dan semua topik terukur. Variasi itu **milik Fanspage asalnya** dan hanya diuji di sana.
+   * Skor gabungan (shares ×4 + komentar ×3 + reaksi ×1,5 + reach ×0,05) tetap disimpan untuk riwayat, tetapi tidak lagi menentukan pilihan topik.
 5. **Kurikulum Dasar & Evolusi Topik (Topik Dinamis)**:
-   * **10 topik seed adalah kurikulum dasar** — fondasi permanen yang selalu diajarkan. Seluruh isinya dikirim ke AI sebagai materi belajar setiap kali topik baru dirancang.
-   * Setiap Senin pukul 04:00, AI membaca topik dengan **jangkauan tertinggi selama 7 hari terakhir**, lalu menulis "bab lanjutan" dari salah satu materi dasar — lengkap dengan konsep geologi dan blueprint visualnya.
+   * **Topik seed adalah kurikulum dasar** (33 topik, lihat `docs/riset-topik-faq-prospector.md`) — fondasi permanen yang selalu diajarkan. Seluruh isinya dikirim ke AI sebagai materi belajar setiap kali topik baru dirancang.
+   * AI menulis **variasi dekat** (±90% sama: subjek & mekanisme sama, sudut baru) dari pemenang reach — lengkap dengan konsep geologi dan blueprint visualnya. Tombol evolusi manual di dashboard memakai pemenang 7 hari terakhir.
    * Setiap topik turunan **wajib berakar ke satu topik dasar**. Bila AI menyebut materi dasar yang tidak ada, sistem mencocokkan sendiri berdasarkan kemiripan isi.
    * Topik dasar ditandai badge **DASAR** (permanen, tidak bisa dinonaktifkan, bobot minimal 0.8 agar fundamental tetap tayang). Topik turunan ditandai **TURUNAN**, bobot awal 1.4, bisa dinonaktifkan bila tidak perform.
    * Validasi otomatis menolak usulan yang duplikat atau tidak lengkap.

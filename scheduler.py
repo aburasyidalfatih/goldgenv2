@@ -15,7 +15,10 @@ from core.feedback_loop import (
     get_next_recommended_topic,
     update_all_post_metrics,
     optimize_all_pages,
+    optimize_topic_weights,
     mark_topic_used,
+    learning_phase,
+    focus_winners,
 )
 from core.topic_evolution import evolve_topics
 from core.maintenance import remove_generated_image, cleanup_orphan_images
@@ -186,6 +189,8 @@ def metrics_sync_job():
         for entry in res.get("pages", []):
             logger.info(f"[Scheduler] '{entry['page_name']}' top topic: {entry['winning_topic']}")
 
+        stock_focus_variants(db)
+
         # Sweep poster files left behind by failed generations.
         cleanup_orphan_images(db)
     except Exception as e:
@@ -221,29 +226,39 @@ def comment_reply_job():
         db.close()
 
 
-def topic_evolution_job():
+def stock_focus_variants(db) -> dict:
     """
-    Weekly: every page grows new topics from ITS OWN winners. New topics land in
-    the shared catalog, so a discovery on one page can benefit the others.
+    Keeps every winner in each page's focus rotation supplied with fresh variants.
+
+    For a page that has tested and measured every base topic, any of its top
+    winners with no unposted variant left gets new close variants grown from it,
+    so the rotation #1 -> #2 -> #3 always has "something like the winner" to post.
+    The first run after a page finishes its test phase is what grows its very
+    first variants. Returns {page_id: [titles created]}.
     """
-    db = SessionLocal()
-    try:
-        if get_setting_val(db, "auto_topic_evolution", "true").lower() != "true":
-            logger.info("[Scheduler] Topic evolution disabled. Skipping.")
-            return
+    if get_setting_val(db, "auto_topic_evolution", "true").lower() != "true":
+        logger.info("[Scheduler] Topic evolution disabled. Skipping variant stocking.")
+        return {}
+    text_ai = ai_backend(db, "text")
+    if text_ai["missing"]:
+        logger.warning(f"[Scheduler] No {text_ai['label']} key. Skipping variant stocking.")
+        return {}
+    window_days = _int_setting(db, "topic_window_days", 7, 1, 90)
+    max_new = _int_setting(db, "max_new_topics_per_cycle", 2, 1, 5)
 
-        text_ai = ai_backend(db, "text")
-        if text_ai["missing"]:
-            logger.warning(f"[Scheduler] No {text_ai['label']} key. Skipping topic evolution.")
-            return
-
-        window_days = _int_setting(db, "topic_window_days", 7, 1, 90)
-        max_new = _int_setting(db, "max_new_topics_per_cycle", 2, 1, 5)
-
-        # Metrics were already refreshed by the 03:00 sync job an hour ago, so this
-        # job reads them instead of hitting the Graph API for every post again.
-        pages = db.query(FacebookPage).filter(FacebookPage.is_active.isnot(False)).all()
-        for page in pages:
+    created = {}
+    for page in db.query(FacebookPage).filter(FacebookPage.is_active.isnot(False)).all():
+        phase = learning_phase(db, page.id)
+        if phase["phase"] != "focus" or phase["measured"] < phase["total"]:
+            logger.info(f"[Scheduler] '{page.name}' still testing base topics "
+                        f"({phase['measured']}/{phase['total']} measured); no variants yet.")
+            continue
+        winners = focus_winners(db, page.id)
+        leaders = [w["leader"].id for w in winners]
+        for rank, winner in enumerate(winners, start=1):
+            if winner["fresh_variants"]:
+                continue
+            others = [i for i in leaders if i != winner["leader"].id]
             res = evolve_topics(
                 db=db,
                 api_key=text_ai["api_key"],
@@ -253,14 +268,29 @@ def topic_evolution_job():
                 max_new=max_new,
                 language=page.content_language or DEFAULT_CONTENT_LANGUAGE,
                 page_id=page.id,
+                winner_ids=[winner["leader"].id] + others,
             )
             if res.get("success"):
-                titles = ", ".join(t["title"] for t in res.get("created", []))
-                logger.info(f"[Scheduler] '{page.name}' grew new topics: {titles}")
+                titles = [t["title"] for t in res.get("created", [])]
+                created.setdefault(page.id, []).extend(titles)
+                logger.info(f"[Scheduler] '{page.name}' winner #{rank} '{winner['leader'].title}' "
+                            f"got variants: {', '.join(titles)}")
             else:
-                logger.info(f"[Scheduler] '{page.name}' evolution skipped: {res.get('message')}")
+                logger.info(f"[Scheduler] '{page.name}' winner #{rank} variants skipped: {res.get('message')}")
+        if page.id in created:
+            optimize_topic_weights(db, window_days, page.id)   # variants take their winner's weight
+    return created
 
-        optimize_all_pages(db, window_days)
+
+def topic_evolution_job():
+    """
+    Weekly safety net for the nightly stocking: makes sure every page in its focus
+    phase has fresh variants of each of its top winners, then refreshes weights.
+    """
+    db = SessionLocal()
+    try:
+        stock_focus_variants(db)
+        optimize_all_pages(db, _int_setting(db, "topic_window_days", 7, 1, 90))
     except Exception as e:
         logger.error(f"[Scheduler] Error during topic evolution: {e}")
         db.rollback()

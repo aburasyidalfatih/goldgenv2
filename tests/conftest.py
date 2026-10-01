@@ -316,3 +316,17 @@ def with_gemini_key(db):
     yield
     setting.value = ""
     db.commit()
+
+
+@pytest.fixture
+def finish_test_phase(make_post, topics):
+    """
+    Publishes every base topic once on a page, old enough to be measured, so the
+    page leaves the test phase and enters the focus phase.
+    """
+    def _finish(page_row_id, reach=1000, days_ago=20, skip=()):
+        for topic in topics:
+            if topic.source == "seed" and topic.id not in skip:
+                make_post(page_row_id, topic, days_ago=days_ago, reach=reach)
+
+    return _finish

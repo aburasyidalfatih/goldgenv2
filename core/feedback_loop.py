@@ -1,19 +1,16 @@
 import random
-import statistics
 import logging
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
-from database.models import ContentTopic, Post, PostMetric, PageTopicWeight
+from database.models import ContentTopic, FacebookPage, Post, PostMetric, PageTopicWeight
 from core.fb_client import fetch_post_metrics
 from core.taxonomy import SEED_TOPICS
 
 logger = logging.getLogger(__name__)
 
-# Ceiling for topics that produced nothing inside the analysis window. Kept just
-# BELOW the neutral 1.0 so a topic performing at this week's average always ranks
-# higher than a dormant one — including when only one topic ran this week and its
-# relative weight lands exactly on 1.0.
+# Ceiling for a topic never measured on a page once that page has real results:
+# just BELOW the neutral 1.0, so an untried topic never outranks an average one.
 STALE_TOPIC_CAP = 0.95
 
 # The seed taxonomy is the base curriculum. Even when a fundamental performs
@@ -26,12 +23,17 @@ VARIANT_WEIGHT_FLOOR = 0.4
 # (mirrors NEW_TOPIC_WEIGHT in core.topic_evolution).
 NEW_VARIANT_BASELINE = 1.4
 
-# Weight for the only topic with fresh results when the page has no earlier
-# history to compare it with (e.g. its very first week).
-LONE_WINNER_WEIGHT = 1.5
+# A post's reach keeps growing for a day or two after it goes live. Learning only
+# trusts posts at least this old, otherwise the newest post always looks weakest.
+MATURE_AFTER_HOURS = 48
 
-# How far back to look for a page's "typical post" when judging a lone winner.
-TYPICAL_LOOKBACK_DAYS = 60
+# Focus phase (every base topic already tested on the page): share of picks that
+# still explore the least-used topics, so a shift in the audience's taste is
+# noticed. The remaining 90% follow the page's own reach winners.
+EXPLORE_RATE = 0.10
+
+# Focus phase rotates over this many top reach winners: #1, #2, #3, #1, ...
+FOCUS_ROTATION_SIZE = 3
 
 # How far back the nightly metric refresh reaches. Older posts keep the numbers
 # already recorded; their reach barely moves after a month anyway.
@@ -58,7 +60,8 @@ def _as_naive_utc(dt: datetime | None) -> datetime:
     return dt
 
 
-def window_performance(db: Session, days: int = 7, page_id: int | None = None) -> dict:
+def window_performance(db: Session, days: int = 7, page_id: int | None = None,
+                       mature_only: bool = False) -> dict:
     """
     Ranks topics by how they performed on posts PUBLISHED within the last `days`.
     Scoped to one Fanspage when `page_id` is given — each page has its own audience.
@@ -66,12 +69,17 @@ def window_performance(db: Session, days: int = 7, page_id: int | None = None) -
     Note: PostMetric stores the latest snapshot per post (not a daily history), so
     this measures "posts published in the window, using their current numbers" —
     not "views that happened during the window".
+
+    `mature_only` skips posts younger than MATURE_AFTER_HOURS, whose reach is still
+    climbing; the learning loop uses it, the analytics view does not.
     """
     cutoff = _naive_utc_cutoff(days)
 
     query = db.query(Post).filter(
         Post.status == "published", Post.published_at.isnot(None), Post.published_at >= cutoff
     )
+    if mature_only:
+        query = query.filter(Post.published_at <= _mature_cutoff())
     if page_id is not None:
         query = query.filter(Post.page_id == page_id)
     posts = query.all()
@@ -132,27 +140,48 @@ def window_performance(db: Session, days: int = 7, page_id: int | None = None) -
     }
 
 
-def _typical_post_score(db: Session, page_id: int | None, window_days: int) -> float | None:
+def _mature_cutoff() -> datetime:
+    return (datetime.now(timezone.utc) - timedelta(hours=MATURE_AFTER_HOURS)).replace(tzinfo=None)
+
+
+def topics_for_page(db: Session, page_id: int | None) -> list:
     """
-    Median score of one post published BEFORE the analysis window (within the
-    lookback). The median resists a single viral outlier skewing the baseline.
+    Active topics a page may produce: the whole base curriculum plus variants that
+    are shared or were grown from this page's own winners. A variant born from
+    another page's audience is not forced onto this one.
     """
-    window_start = _naive_utc_cutoff(window_days)
-    lookback_start = _naive_utc_cutoff(TYPICAL_LOOKBACK_DAYS)
-    query = (
-        db.query(PostMetric.calculated_score)
-        .join(Post, Post.id == PostMetric.post_id)
-        .filter(
-            Post.status == "published",
-            Post.published_at.isnot(None),
-            Post.published_at < window_start,
-            Post.published_at >= lookback_start,
-        )
-    )
+    query = db.query(ContentTopic).filter(ContentTopic.is_active.isnot(False))
     if page_id is not None:
-        query = query.filter(Post.page_id == page_id)
-    scores = [s for (s,) in query.all() if s is not None]
-    return statistics.median(scores) if scores else None
+        query = query.filter(or_(ContentTopic.origin_page_id.is_(None),
+                                 ContentTopic.origin_page_id == page_id))
+    return query.all()
+
+
+def learning_phase(db: Session, page_id: int) -> dict:
+    """
+    Where a page stands in its curriculum. 'test' while some active base topic has
+    never been produced for the page; 'focus' once every one has been. `measured`
+    counts base topics with at least one published post old enough to judge.
+    """
+    bases = (db.query(ContentTopic)
+               .filter(ContentTopic.source == "seed", ContentTopic.is_active.isnot(False))
+               .all())
+    produced = {tid for (tid,) in db.query(Post.topic_id).filter(Post.page_id == page_id).distinct()}
+    measured = {
+        tid for (tid,) in db.query(Post.topic_id)
+        .join(PostMetric, PostMetric.post_id == Post.id)
+        .filter(Post.page_id == page_id, Post.status == "published",
+                Post.published_at.isnot(None), Post.published_at <= _mature_cutoff())
+        .distinct()
+    }
+    untested = [t for t in bases if t.id not in produced]
+    return {
+        "phase": "test" if untested else "focus",
+        "total": len(bases),
+        "tested": len(bases) - len(untested),
+        "measured": sum(1 for t in bases if t.id in measured),
+        "untested": untested,
+    }
 
 
 def baseline_weight_for(topic: ContentTopic) -> float:
@@ -278,7 +307,9 @@ def mark_topic_used(db: Session, topic: ContentTopic, page_id: int | None = None
 def optimize_topic_weights(db: Session, window_days: int = 7, page_id: int | None = None) -> dict:
     """
     Reinforcement learning cycle:
-    Evaluates scores per topic and adjusts the selection weights.
+    Evaluates each topic's average REACH per post and adjusts the selection
+    weights. Only posts at least MATURE_AFTER_HOURS old count, since a newer
+    post's reach is still climbing.
 
     Recent performance dominates: a topic that won last week outranks one that
     won months ago, so the autopilot follows what the audience wants *now*.
@@ -287,11 +318,13 @@ def optimize_topic_weights(db: Session, window_days: int = 7, page_id: int | Non
     that page's own weight table — every page learns its own audience. Without it,
     the global catalog weights are refreshed from all pages combined.
     """
-    topics = db.query(ContentTopic).filter(ContentTopic.is_active.isnot(False)).all()
+    topics = topics_for_page(db, page_id)
     if not topics:
         return {"message": "Tidak ada topik di database."}
 
-    recent = {e["topic_id"]: e for e in window_performance(db, window_days, page_id)["ranking"]}
+    recent = {e["topic_id"]: e for e in
+              window_performance(db, window_days, page_id, mature_only=True)["ranking"]}
+    mature_cutoff = _mature_cutoff()
 
     # Baseline weights come from the seed taxonomy; topics that have never been
     # published must keep their editorial priority instead of being reset to 1.0.
@@ -310,9 +343,9 @@ def optimize_topic_weights(db: Session, window_days: int = 7, page_id: int | Non
         measured_posts = 0
         for p in posts:
             if p.metrics:
-                metric = p.metrics[0]
-                total_sc += metric.calculated_score
-                total_r += metric.reach
+                total_sc += p.metrics[0].calculated_score
+            if p.metrics and p.published_at and _as_naive_utc(p.published_at) <= mature_cutoff:
+                total_r += p.metrics[0].reach
                 measured_posts += 1
 
         avg_reach = float(total_r / measured_posts) if measured_posts else 0.0
@@ -322,8 +355,8 @@ def optimize_topic_weights(db: Session, window_days: int = 7, page_id: int | Non
         target.avg_reach = avg_reach
 
         recent_entry = recent.get(topic.id)
-        lifetime_avg = (total_sc / measured_posts) if measured_posts else 0.0
-        recent_avg = recent_entry["avg_score"] if (recent_entry and recent_entry["measured_posts"]) else 0.0
+        lifetime_avg = avg_reach
+        recent_avg = recent_entry["avg_reach"] if (recent_entry and recent_entry["measured_posts"]) else 0.0
 
         in_window = recent_avg > 0
         if in_window and lifetime_avg > 0:
@@ -344,60 +377,47 @@ def optimize_topic_weights(db: Session, window_days: int = 7, page_id: int | Non
             "recent": recent_entry,
         })
 
-    # Pass 2: weights are RELATIVE to the average performer, so the scale works
-    # whether a page reaches 100 or 100,000 people per post. The reference is the
-    # average of topics that actually ran in the window, so "1.0" means
-    # "average for this week".
-    in_window_scores = [s["blended"] for s in stats if s["in_window"]]
-    all_scores = [s["blended"] for s in stats if s["blended"] is not None]
-    reference = (
-        sum(in_window_scores) / len(in_window_scores) if in_window_scores
-        else (sum(all_scores) / len(all_scores) if all_scores else 0.0)
-    )
-
-    # With a single topic in the window, "relative to this week's average" is
-    # meaningless: the topic IS the average and always scored exactly 1.0 — barely
-    # above dormant topics, so a clear winner was produced LESS often than the rest
-    # (exploration skips topics already used). Judge it against what a typical post
-    # on this page achieved before the window instead.
-    lone_weight = None
-    if len(in_window_scores) == 1:
-        lone = next(s for s in stats if s["in_window"])
-        typical = _typical_post_score(db, page_id, window_days)
-        recent_avg = lone["recent"]["avg_score"] if lone["recent"] else 0.0
-        if typical and typical > 0:
-            # Never below 1.0: it is the only topic with fresh results, so it must
-            # stay ahead of topics that produced nothing this window.
-            lone_weight = max(1.0, min(3.0, recent_avg / typical))
-        else:
-            lone_weight = LONE_WINNER_WEIGHT   # no history to compare against yet
+    # Pass 2: weights are RELATIVE to the page's average measured topic, so the
+    # scale works whether a page reaches 100 or 100,000 people per post, and "1.0"
+    # means "an average topic for this audience". Every measured topic counts, not
+    # only this week's: the test phase spreads the curriculum over weeks, and a
+    # winner tested early must not lose to an average topic tested late. Topics
+    # in focus are re-posted often, so their recent numbers keep them honest.
+    measured_scores = [s["blended"] for s in stats if s["blended"] is not None]
+    reference = sum(measured_scores) / len(measured_scores) if measured_scores else 0.0
 
     summary = []
     for s in stats:
-        topic, target, blended, recent_entry = s["topic"], s["target"], s["blended"], s["recent"]
+        topic, target, blended = s["topic"], s["target"], s["blended"]
 
         is_base = (topic.source or "seed") == "seed"
         floor = BASE_TOPIC_WEIGHT_FLOOR if is_base else VARIANT_WEIGHT_FLOOR
 
-        if s["in_window"] and lone_weight is not None:
-            target.weight = round(lone_weight, 2)
-        elif blended is not None and reference > 0:
+        if blended is not None and reference > 0:
             weight = max(floor, min(3.0, blended / reference))
-            if not s["in_window"] and in_window_scores:
-                # A topic that produced nothing this window must not outrank a topic
-                # that did: it stays in rotation for exploration, capped at baseline.
-                weight = max(floor, min(weight, STALE_TOPIC_CAP))
-            target.weight = round(weight, 2)
         else:
             # Never measured on this page -> the seeded editorial baseline.
             weight = baseline_weights.get(topic.topic_key, 1.0 if is_base else NEW_VARIANT_BASELINE)
-            if in_window_scores:
-                # Once real results exist, an untried topic must not outrank a topic
-                # that actually performed. Untried topics still get their turn through
-                # the 30% exploration branch, which targets the least-used topics.
+            if measured_scores:
+                # Once real results exist, an untried topic must not outrank an
+                # average one; it gets its turn through the test phase or exploration.
                 weight = max(floor, min(weight, STALE_TOPIC_CAP))
-            target.weight = round(weight, 2)
+        target.weight = round(weight, 2)
+        s["weight"] = target.weight
 
+    # Pass 3: a variant grown from a winner and not yet measured here is "more of
+    # what works", so it starts at its parent's weight on this page instead of
+    # being parked below every topic that already performed.
+    by_topic = {s["topic"].id: s for s in stats}
+    for s in stats:
+        topic = s["topic"]
+        parent = by_topic.get(topic.parent_topic_id)
+        if (topic.source == "ai" and s["blended"] is None and parent
+                and parent["blended"] is not None):
+            s["target"].weight = round(max(s["target"].weight, parent["weight"]), 2)
+
+    for s in stats:
+        topic, target, recent_entry = s["topic"], s["target"], s["recent"]
         summary.append({
             "id": topic.id,
             "title": topic.title,
@@ -423,7 +443,6 @@ def optimize_topic_weights(db: Session, window_days: int = 7, page_id: int | Non
 
 def optimize_all_pages(db: Session, window_days: int = 7) -> dict:
     """Runs the learning cycle for every managed page, then the global catalog."""
-    from database.models import FacebookPage
 
     results = []
     for page in db.query(FacebookPage).filter(FacebookPage.is_active.isnot(False)).all():
@@ -458,17 +477,99 @@ def page_topic_weights(db: Session, page_id: int, topics: list) -> dict:
     }
 
 
+def _family_key(topic: ContentTopic) -> int:
+    """A base topic and every variant grown from it form one family (one subject)."""
+    return topic.base_topic_id or topic.id
+
+
+def _produced_topic_ids(db: Session, page_id: int) -> set:
+    return {tid for (tid,) in db.query(Post.topic_id).filter(Post.page_id == page_id).distinct()}
+
+
+def focus_winners(db: Session, page_id: int, topics: list | None = None,
+                  weights: dict | None = None) -> list:
+    """
+    The page's top FOCUS_ROTATION_SIZE winner families, best first. A family is
+    ranked by its best member's measured average reach on this page, and its
+    leader is that member. Raw reach, not the selection weight: weights are capped,
+    so two strong winners could tie and come out in the wrong order. `fresh_variants` are the family's AI variants
+    this page has never produced, oldest first: they are used before the leader
+    itself is repeated.
+    """
+    topics = topics if topics is not None else topics_for_page(db, page_id)
+    weights = weights if weights is not None else page_topic_weights(db, page_id, topics)
+    produced = _produced_topic_ids(db, page_id)
+    reach = {r.topic_id: (r.avg_reach or 0.0) for r in
+             db.query(PageTopicWeight).filter(PageTopicWeight.page_id == page_id).all()}
+
+    def strength(t):
+        return (reach.get(t.id, 0.0), weights.get(t.id, 0), t.id in produced)
+
+    families = {}
+    for topic in topics:
+        families.setdefault(_family_key(topic), []).append(topic)
+
+    ranked = []
+    for key, members in families.items():
+        leader = max(members, key=strength)
+        fresh = sorted(
+            (t for t in members if t.source == "ai" and t.id not in produced),
+            key=lambda t: (_as_naive_utc(t.created_at), t.id),
+        )
+        ranked.append((strength(leader), {
+            "key": key,
+            "leader": leader,
+            "avg_reach": reach.get(leader.id, 0.0),
+            "weight": weights.get(leader.id, 0),
+            "fresh_variants": fresh,
+        }))
+    ranked.sort(key=lambda pair: pair[0], reverse=True)
+    return [family for _, family in ranked[:FOCUS_ROTATION_SIZE]]
+
+
+def _rotate_focus(db: Session, page_id: int, winners: list) -> dict:
+    """
+    Next winner family in the rotation #1 -> #2 -> #3 -> #1. When the #1 family
+    changes (a new winner emerged), the rotation restarts at the new #1. The
+    position is stored on the page and committed with the post that uses it.
+    """
+    page = db.query(FacebookPage).filter(FacebookPage.id == page_id).first()
+    leader_key = winners[0]["key"]
+    if page.focus_leader_key != leader_key:
+        page.focus_leader_key = leader_key
+        page.focus_cursor = 0
+    slot = (page.focus_cursor or 0) % len(winners)
+    page.focus_cursor = slot + 1
+    return {"slot": slot, **winners[slot]}
+
+
 def get_next_recommended_topic(db: Session, page_id: int | None = None) -> ContentTopic:
     """
-    70% Exploit (Weighted selection based on performance)
-    30% Explore (Picks underrepresented topics to test fresh ideas)
+    Picks the next topic for a page in two phases.
 
-    When `page_id` is given the draw uses that page's own learned weights and its
-    own usage history, so two Fanspages do not converge on identical content.
+    TEST: while the page has base topics it has never produced, it always takes
+    one of them at random, so every base topic is tried exactly once on every page
+    before anything repeats.
+
+    FOCUS: EXPLORE_RATE of picks go to the least-used topics (to notice a change in
+    taste). The rest rotate over the page's top reach winners, #1 -> #2 -> #3 ->
+    #1, each time using a fresh AI variant of that winner (about 90% the same
+    subject) and repeating the winner itself only when its variants run out.
+
+    When `page_id` is given everything uses that page's own weights and history,
+    so two Fanspages do not converge on identical content.
     """
-    topics = db.query(ContentTopic).filter(ContentTopic.is_active.isnot(False)).all()
+    topics = topics_for_page(db, page_id)
     if not topics:
         raise ValueError("Database topik kosong.")
+
+    if page_id is not None:
+        untested = learning_phase(db, page_id)["untested"]
+        if untested:
+            selected = random.choice(untested)
+            logger.info(f"[Feedback Loop] TEST mode ({len(untested)} base topic(s) left) "
+                        f"selected topic: {selected.title}")
+            return selected
 
     weights_by_topic = (
         page_topic_weights(db, page_id, topics) if page_id is not None
@@ -490,25 +591,51 @@ def get_next_recommended_topic(db: Session, page_id: int | None = None) -> Conte
     else:
         usage = {t.id: (t.posts_count or 0, _as_naive_utc(t.last_used_at)) for t in topics}
 
-    # 30% chance for Exploration: pick from topics this page used least.
-    # Ties are broken randomly across ALL equally-unused topics, otherwise a fresh
-    # page would always start with the same three topics (lowest id wins the sort).
-    if random.random() < 0.3:
+    # Exploration: pick from topics this page used least. Ties are broken randomly
+    # across ALL equally-unused topics, otherwise the lowest id would always win.
+    if random.random() < EXPLORE_RATE:
         least_used_topics = sorted(topics, key=lambda t: usage[t.id])
         fewest = usage[least_used_topics[0].id][0]
         tied = [t for t in least_used_topics if usage[t.id][0] == fewest]
         pool = tied if len(tied) >= 3 else least_used_topics[:3]
         selected = random.choice(pool)
-        logger.info(f"[Feedback Loop] EXPLORE Mode selected topic: {selected.title}")
+        logger.info(f"[Feedback Loop] EXPLORE mode selected topic: {selected.title}")
         return selected
 
-    # 70% chance for Exploitation: weighted lottery.
-    # Weights are squared so a clear weekly winner actually dominates the draw
-    # instead of being diluted across ten near-equal topics.
+    if page_id is not None:
+        winner = _rotate_focus(db, page_id, focus_winners(db, page_id, topics, weights_by_topic))
+        selected = winner["fresh_variants"][0] if winner["fresh_variants"] else winner["leader"]
+        logger.info(
+            f"[Feedback Loop] FOCUS mode winner #{winner['slot'] + 1} "
+            f"'{winner['leader'].title}' -> {selected.title}"
+        )
+        return selected
+
+    # No page (global catalog): weighted lottery, squared so winners dominate.
     weights = [max(0.1, weights_by_topic[t.id]) ** 2 for t in topics]
     selected = random.choices(topics, weights=weights, k=1)[0]
-    logger.info(
-        f"[Feedback Loop] EXPLOIT Mode selected topic: {selected.title} "
-        f"(weight: {weights_by_topic[selected.id]})"
-    )
+    logger.info(f"[Feedback Loop] Weighted pick: {selected.title} (weight: {weights_by_topic[selected.id]})")
     return selected
+
+
+def topic_reach_summary(db: Session, page_id: int, topic: ContentTopic) -> dict:
+    """A topic's lifetime results on one page (mature posts only), shaped like a window_performance entry."""
+    posts = (db.query(Post)
+               .filter(Post.page_id == page_id, Post.topic_id == topic.id, Post.status == "published",
+                       Post.published_at.isnot(None), Post.published_at <= _mature_cutoff())
+               .all())
+    metrics = [p.metrics[0] for p in posts if p.metrics]
+    reach = sum(m.reach for m in metrics)
+    return {
+        "topic_id": topic.id,
+        "topic_title": topic.title,
+        "category": topic.category,
+        "core_concept": topic.core_concept,
+        "posts": len(posts),
+        "measured_posts": len(metrics),
+        "reach": reach,
+        "avg_reach": round(reach / len(metrics), 1) if metrics else 0.0,
+        "reactions": sum(m.reactions for m in metrics),
+        "comments": sum(m.comments for m in metrics),
+        "shares": sum(m.shares for m in metrics),
+    }

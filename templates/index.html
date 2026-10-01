@@ -473,9 +473,45 @@
                     <span class="text-xs text-slate-400">Likes + Comments + Shares</span>
                 </div>
                 <div class="bg-darkcard border border-darkborder rounded-xl p-5 sm:p-6 shadow min-w-0">
-                    <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Topik Pemenang</span>
-                    <h3 class="text-sm font-bold text-white mt-1 line-clamp-2" x-text="analyticsSummary.winning_topic || 'Dalam Pembelajaran'"></h3>
-                    <span class="text-xs text-gold-400">Berdasarkan skor performa terkumpul</span>
+                    <!-- Test phase: every base topic is posted once before anything repeats -->
+                    <template x-if="analyticsSummary.learning?.phase === 'test'">
+                        <div>
+                            <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Tahap Uji Topik</span>
+                            <h3 class="text-2xl font-black text-white mt-1"
+                                x-text="`${analyticsSummary.learning.tested}/${analyticsSummary.learning.total}`"></h3>
+                            <div class="h-1.5 bg-slate-800 rounded-full mt-1.5 overflow-hidden">
+                                <div class="h-full bg-gold-500" :style="`width: ${Math.round(100 * analyticsSummary.learning.tested / analyticsSummary.learning.total)}%`"></div>
+                            </div>
+                            <span class="text-xs text-gold-400 mt-1 block">Tiap topik dasar diposting sekali dulu, lalu fokus ke reach terluas</span>
+                        </div>
+                    </template>
+                    <!-- Focus phase: rotation over the top-3 reach winners -->
+                    <template x-if="analyticsSummary.learning?.phase === 'focus'">
+                        <div>
+                            <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Rotasi Pemenang Reach</span>
+                            <ol class="mt-1 space-y-1">
+                                <template x-for="w in analyticsSummary.learning.rotation" :key="w.rank">
+                                    <li class="text-xs flex items-baseline gap-1.5 min-w-0"
+                                        :class="w.rank === analyticsSummary.learning.next_rank ? 'text-white font-bold' : 'text-slate-300'">
+                                        <span class="shrink-0" x-text="`#${w.rank}`"></span>
+                                        <span class="truncate" x-text="w.title"></span>
+                                        <span class="shrink-0 text-slate-400 font-normal" x-text="`${w.avg_reach.toLocaleString('id-ID')}`"></span>
+                                    </li>
+                                </template>
+                            </ol>
+                            <span class="text-xs text-gold-400 mt-1 block"
+                                  x-text="analyticsSummary.learning.measured < analyticsSummary.learning.total
+                                      ? `Menunggu metrik: ${analyticsSummary.learning.measured}/${analyticsSummary.learning.total} topik terukur`
+                                      : `Berikutnya #${analyticsSummary.learning.next_rank} · angka = rata-rata reach`"></span>
+                        </div>
+                    </template>
+                    <template x-if="!analyticsSummary.learning">
+                        <div>
+                            <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Topik Pemenang</span>
+                            <h3 class="text-sm font-bold text-white mt-1 line-clamp-2" x-text="analyticsSummary.winning_topic || 'Dalam Pembelajaran'"></h3>
+                            <span class="text-xs text-gold-400">Berdasarkan reach rata-rata</span>
+                        </div>
+                    </template>
                 </div>
             </div>
 
@@ -553,11 +589,9 @@
                     <p class="text-xs text-slate-300 min-w-0">
                         <i class="fa-solid fa-dna text-gold-400 mr-1"></i>
                         <strong class="text-slate-100">Evolusi Topik:</strong>
-                        AI mempelajari <span class="text-sky-300" x-text="`${baseTopics.length} topik dasar`"></span>
-                        lalu merancang bab lanjutan dari pemenang di atas.
-                        <span x-show="schedule.next_evolution" x-cloak class="text-slate-400">
-                            Otomatis tiap Senin — berikutnya <span x-text="formatDate(schedule.next_evolution)"></span>.
-                        </span>
+                        setelah <span class="text-sky-300" x-text="`${baseTopics.length} topik dasar`"></span>
+                        teruji dan terukur, AI menyiapkan variasi dekat (±90% mirip) untuk tiap pemenang di rotasi
+                        — otomatis tiap malam setelah metrik diperbarui. Tombol ini membuat variasi dari pemenang 7 hari terakhir.
                     </p>
                     <button @click="askEvolveTopics()" :disabled="isEvolving"
                             class="shrink-0 px-4 py-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 disabled:opacity-50"

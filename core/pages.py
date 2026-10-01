@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from config import SECRET_MASK, DEFAULT_CONTENT_LANGUAGE
 from core.utils import iso_utc
-from database.models import FacebookPage, Post, PageTopicWeight, CommentReply
+from database.models import ContentTopic, FacebookPage, Post, PageTopicWeight, CommentReply
 from core.fb_client import test_facebook_credentials
 
 logger = logging.getLogger(__name__)
@@ -218,6 +218,9 @@ def delete_page(db: Session, page_row_id: int) -> dict:
     db.query(PageTopicWeight).filter(PageTopicWeight.page_id == page.id).delete()
     db.query(CommentReply).filter(CommentReply.page_id == page.id).delete()
     db.query(Post).filter(Post.page_id == page.id).update({Post.page_id: None})
+    # Its variants become shared instead of belonging to no page at all.
+    db.query(ContentTopic).filter(ContentTopic.origin_page_id == page.id).update(
+        {ContentTopic.origin_page_id: None})
     db.delete(page)
     db.commit()
 

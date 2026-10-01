@@ -45,6 +45,9 @@ from core.feedback_loop import (
     window_performance,
     page_topic_weights,
     mark_topic_used,
+    topics_for_page,
+    learning_phase,
+    focus_winners,
 )
 from core.topic_evolution import evolve_topics, retire_topic, reactivate_topic
 from core import comment_reply
@@ -608,20 +611,45 @@ def analytics_summary(page: Optional[int] = None, db: Session = Depends(get_db))
             total_reach += m.reach
             total_engagement += (m.reactions + m.comments + m.shares)
 
-    # The card is labelled "Prioritas 70% posting", so it must name the topic the
+    # The card names the focus topic, so it must name the topic the
     # learning loop actually favours — not a lifetime sum of scores, which rewards
     # topics that were merely posted often and can disagree with what gets produced.
     measured = [p for p in posts if p.metrics]
     winning = "Belum cukup data"
     if measured:
-        topics = db.query(ContentTopic).filter(ContentTopic.is_active.isnot(False)).all()
         if page:
-            weights = page_topic_weights(db, page, topics)
+            # Same ranking the focus rotation serves first (raw average reach).
+            winners = focus_winners(db, page)
+            top_topic = winners[0]["leader"] if winners else None
         else:
-            weights = {t.id: (t.weight or 0) for t in topics}
-        top_topic = max(topics, key=lambda t: weights.get(t.id, 0), default=None)
+            topics = topics_for_page(db, None)
+            top_topic = max(topics, key=lambda t: t.weight or 0, default=None)
         if top_topic:
             winning = top_topic.title
+
+    learning = None
+    if page:
+        phase = learning_phase(db, page)
+        learning = {
+            "phase": phase["phase"],
+            "tested": phase["tested"],
+            "measured": phase["measured"],
+            "total": phase["total"],
+        }
+        if phase["phase"] == "focus":
+            page_row = get_page(db, page)
+            winners = focus_winners(db, page)
+            restarted = page_row and page_row.focus_leader_key != (winners[0]["key"] if winners else None)
+            learning["next_rank"] = 1 if restarted or not winners else (page_row.focus_cursor or 0) % len(winners) + 1
+            learning["rotation"] = [
+                {
+                    "rank": i,
+                    "title": w["leader"].title,
+                    "avg_reach": round(w["avg_reach"]),
+                    "fresh_variants": len(w["fresh_variants"]),
+                }
+                for i, w in enumerate(winners, start=1)
+            ]
 
     return {
         "page_id": page,
@@ -629,6 +657,7 @@ def analytics_summary(page: Optional[int] = None, db: Session = Depends(get_db))
         "total_reach": total_reach,
         "total_engagement": total_engagement,
         "winning_topic": winning,
+        "learning": learning,
         "has_metrics": bool(measured),
         "last_updated": iso_utc(max((p.metrics[0].last_checked_at for p in measured), default=None))
     }
