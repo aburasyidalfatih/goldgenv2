@@ -1,0 +1,24 @@
+# Used by Dokploy's "Docker Compose" service type, or locally: docker compose up -d
+# Values come from the environment (Dokploy's Environment tab, or a .env file next
+# to this one — see .env.example).
+services:
+  autoposter:
+    build: .
+    restart: unless-stopped
+    # Reached through Dokploy's Traefik (Domains tab -> port 8000), not a host port.
+    # Running locally without Dokploy? Use ports: ["8000:8000"] instead.
+    expose:
+      - "8000"
+    environment:
+      - PORT=8000
+      - SCHEDULER_TIMEZONE=${SCHEDULER_TIMEZONE:-Asia/Jakarta}
+      - AUTOPOSTER_ADMIN_EMAIL=${AUTOPOSTER_ADMIN_EMAIL:-}
+      - AUTOPOSTER_ADMIN_PASSWORD=${AUTOPOSTER_ADMIN_PASSWORD:-}
+    volumes:
+      # Persistent storage for the SQLite database (API keys, tokens, login) & posters
+      - autoposter_data:/app/data
+      - autoposter_storage:/app/storage
+
+volumes:
+  autoposter_data:
+  autoposter_storage:

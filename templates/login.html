@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login — Gold Prospecting AI AutoPoster</title>
+    <script src="/static/vendor/tailwind.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        darkbg: '#0b0f19',
+                        darkcard: '#111827',
+                        darkborder: '#1f293d',
+                        gold: { 400: '#fbbf24', 500: '#f59e0b', 600: '#d97706' }
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="stylesheet" href="/static/vendor/css/fontawesome.min.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⛰️</text></svg>">
+</head>
+<body class="bg-darkbg text-slate-200 min-h-screen flex items-center justify-center p-4 font-sans">
+    <main class="w-full max-w-sm">
+        <div class="flex items-center gap-3 mb-6 justify-center">
+            <div class="w-11 h-11 rounded-xl bg-gold-500 flex items-center justify-center text-slate-950 text-xl">
+                <i class="fa-solid fa-mountain-sun"></i>
+            </div>
+            <div>
+                <h1 class="font-bold text-slate-100 leading-tight">GOLD AI AUTOPOSTER</h1>
+                <p class="text-xs text-slate-400">Masuk untuk membuka dashboard</p>
+            </div>
+        </div>
+
+        <form id="login-form" class="bg-darkcard border border-darkborder rounded-xl p-6 shadow-lg space-y-4" novalidate>
+            {% if not has_user %}
+            <div class="text-xs bg-amber-500/10 border border-amber-500/30 text-amber-200 rounded-lg p-3">
+                Belum ada akun login. Buat dulu dari terminal di folder aplikasi:
+                <code class="block mt-1.5 text-amber-100">python scripts/atur_login.py email@anda.com</code>
+            </div>
+            {% endif %}
+
+            <div>
+                <label for="email" class="block text-xs font-medium text-slate-200 mb-1">Email</label>
+                <input id="email" name="email" type="email" autocomplete="username" required autofocus
+                       class="w-full bg-slate-900 border border-darkborder rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/60 focus:border-gold-500 text-slate-200">
+            </div>
+            <div>
+                <label for="password" class="block text-xs font-medium text-slate-200 mb-1">Password</label>
+                <div class="relative">
+                    <input id="password" name="password" type="password" autocomplete="current-password" required
+                           class="w-full bg-slate-900 border border-darkborder rounded-lg pl-3.5 pr-11 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/60 focus:border-gold-500 text-slate-200">
+                    <button type="button" id="toggle-password" aria-label="Tampilkan password"
+                            class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 hover:text-white">
+                        <i class="fa-solid fa-eye"></i>
+                    </button>
+                </div>
+            </div>
+
+            <p id="login-error" role="alert" class="hidden text-xs text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg p-2.5"></p>
+
+            <button id="login-submit" type="submit"
+                    class="w-full py-2.5 rounded-lg bg-gold-500 hover:bg-gold-400 text-slate-950 font-semibold text-sm transition flex items-center justify-center gap-2 disabled:opacity-60">
+                <i class="fa-solid fa-right-to-bracket"></i> <span>Masuk</span>
+            </button>
+        </form>
+    </main>
+
+    <script>
+        const form = document.getElementById('login-form');
+        const errorBox = document.getElementById('login-error');
+        const submit = document.getElementById('login-submit');
+        const password = document.getElementById('password');
+
+        document.getElementById('toggle-password').addEventListener('click', (e) => {
+            const show = password.type === 'password';
+            password.type = show ? 'text' : 'password';
+            e.currentTarget.setAttribute('aria-label', show ? 'Sembunyikan password' : 'Tampilkan password');
+            e.currentTarget.innerHTML = `<i class="fa-solid ${show ? 'fa-eye-slash' : 'fa-eye'}"></i>`;
+        });
+
+        function showError(message) {
+            errorBox.textContent = message;
+            errorBox.classList.remove('hidden');
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            errorBox.classList.add('hidden');
+            const email = document.getElementById('email').value.trim();
+            if (!email || !password.value) { showError('Email dan password wajib diisi.'); return; }
+            submit.disabled = true;
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password: password.value })
+                });
+                const data = await res.json();
+                if (data.success) { window.location.replace('/'); return; }
+                showError(data.message || 'Login gagal.');
+                password.value = '';
+                password.focus();
+            } catch (err) {
+                showError('Gagal terhubung ke server.');
+            } finally {
+                submit.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>

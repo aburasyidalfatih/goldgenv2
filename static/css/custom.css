@@ -1,0 +1,184 @@
+/* Custom Styling for Gold Prospecting AutoPoster */
+:root {
+    --gold-primary: #f59e0b;
+    --gold-hover: #d97706;
+    --gold-glow: rgba(245, 158, 11, 0.25);
+    --bg-dark: #0b0f19;
+    --card-dark: #111827;
+    --card-border: #1f293d;
+}
+
+/* Hide Alpine-controlled sections until Alpine boots.
+   Without this rule every tab and modal renders at once on page load. */
+[x-cloak] {
+    display: none !important;
+}
+
+/* Always reserve the scrollbar track so content does not shift sideways when
+   switching between a short tab and a long one. */
+html {
+    scrollbar-gutter: stable;
+}
+
+body {
+    background-color: var(--bg-dark);
+    color: #e2e8f0;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+button:disabled { cursor: not-allowed; opacity: .55; }
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation: none !important;
+        transition: none !important;
+        scroll-behavior: auto !important;
+    }
+}
+@media (max-width: 480px) {
+    main .grid.grid-cols-2 > .bg-darkcard { padding: 1rem; }
+    main .grid.grid-cols-2 > .bg-darkcard > span:first-child {
+        display: block; min-height: 2.5rem; letter-spacing: normal;
+    }
+}
+
+/* Visible keyboard focus for every interactive element */
+:focus-visible {
+    outline: 2px solid var(--gold-primary);
+    outline-offset: 2px;
+}
+
+/* Gold Gradient Accents */
+.gold-gradient-text {
+    background: linear-gradient(135deg, #fbbf24 0%, #d97706 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.gold-badge {
+    background: rgba(245, 158, 11, 0.15);
+    border: 1px solid rgba(245, 158, 11, 0.4);
+    color: #fbbf24;
+}
+
+/* Facebook Mockup Card */
+.fb-mockup {
+    background: #18191a;
+    border-radius: 8px;
+    border: 1px solid #2f3031;
+    color: #e4e6eb;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+}
+
+.fb-header {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+}
+
+.fb-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: #3a3b3c;
+}
+
+.fb-author {
+    margin-left: 12px;
+}
+
+.fb-author-name {
+    font-weight: 600;
+    font-size: 14px;
+    color: #e4e6eb;
+}
+
+.fb-time {
+    font-size: 12px;
+    color: #b0b3b8;
+}
+
+.fb-content-text {
+    padding: 4px 16px 4px 16px;
+    font-size: 14px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    color: #e4e6eb;
+    word-break: break-word;
+}
+
+/* Facebook truncates long captions after ~3 lines */
+.fb-clamp {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.fb-more {
+    display: block;
+    padding: 0 16px 12px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #b0b3b8;
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+
+.fb-more:hover {
+    text-decoration: underline;
+    color: #e4e6eb;
+}
+
+/* Sized by aspect-ratio from the app so the poster fills the card edge to edge
+   instead of sitting inside black pillarbox bars. */
+.fb-media {
+    width: 100%;
+    background: #000;
+    overflow: hidden;
+}
+
+.fb-media img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: contain;
+}
+
+.fb-footer-bar {
+    padding: 8px 16px;
+    border-top: 1px solid #2f3031;
+    display: flex;
+    justify-content: space-around;
+    color: #b0b3b8;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+/* Smooth Animations */
+@keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 0 15px rgba(245, 158, 11, 0.2); }
+    50% { box-shadow: 0 0 30px rgba(245, 158, 11, 0.5); }
+}
+
+.generating-active {
+    animation: pulse-glow 2s infinite ease-in-out;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: #0b0f19;
+}
+::-webkit-scrollbar-thumb {
+    background: #1f293d;
+    border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #374151;
+}

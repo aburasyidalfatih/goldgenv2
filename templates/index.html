@@ -1,0 +1,1681 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gold Prospecting AI AutoPoster</title>
+    <!-- Vendored locally so the dashboard still works without an internet connection -->
+    <script src="/static/vendor/tailwind.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        darkbg: '#0b0f19',
+                        darkcard: '#111827',
+                        darkborder: '#1f293d',
+                        gold: {
+                            400: '#fbbf24',
+                            500: '#f59e0b',
+                            600: '#d97706',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <script defer src="/static/vendor/alpine.min.js"></script>
+    <link rel="stylesheet" href="/static/vendor/css/fontawesome.min.css">
+    <link rel="stylesheet" href="/static/css/custom.css?v={{ asset_v }}">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⛰️</text></svg>">
+</head>
+<body class="bg-darkbg text-slate-100 min-h-screen flex flex-col"
+      x-data="autoPosterApp()"
+      x-init="initApp()"
+      @keydown.escape.window="closeOverlays()">
+
+    <!-- Toast Notification -->
+    <div x-show="toast.show"
+         x-cloak
+         role="status"
+         aria-live="polite"
+         x-transition:enter="transition ease-out duration-300 transform"
+         x-transition:enter-start="opacity-0 translate-y-2"
+         x-transition:enter-end="opacity-100 translate-y-0"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed bottom-5 right-5 left-5 sm:left-auto z-50 px-5 py-3 rounded-lg shadow-2xl flex items-start gap-3 text-sm font-medium border max-w-md"
+         :class="toast.type === 'success' ? 'bg-emerald-950/95 border-emerald-500 text-emerald-200' : 'bg-rose-950/95 border-rose-500 text-rose-200'">
+        <i class="mt-0.5" :class="toast.type === 'success' ? 'fa-solid fa-circle-check text-emerald-400' : 'fa-solid fa-triangle-exclamation text-rose-400'"></i>
+        <span class="flex-1" x-text="toast.message"></span>
+        <button @click="toast.show = false" aria-label="Tutup notifikasi" class="opacity-60 hover:opacity-100 transition">
+            <i class="fa-solid fa-xmark"></i>
+        </button>
+    </div>
+
+    <!-- Top Navigation Header -->
+    <header class="border-b border-darkborder bg-darkcard/90 backdrop-blur sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 lg:py-0 lg:h-16 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2.5">
+
+            <!-- Row 1: Brand + compact status (mobile) -->
+            <div class="flex items-center justify-between gap-3 min-w-0">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-9 h-9 shrink-0 rounded-lg bg-gradient-to-br from-gold-400 to-gold-600 flex items-center justify-center text-slate-950 font-black shadow-lg shadow-gold-500/20">
+                        <i class="fa-solid fa-mountain-sun"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <h1 class="text-sm font-bold tracking-tight gold-gradient-text flex items-center gap-2 leading-tight">
+                            <span class="truncate">GOLD AI AUTOPOSTER</span>
+                            <span class="hidden sm:inline text-xs uppercase tracking-wider px-2 py-0.5 rounded bg-gold-500/10 text-gold-400 border border-gold-500/30 shrink-0">v2.0 Pro</span>
+                        </h1>
+                        <p class="text-xs sm:text-xs text-slate-400 truncate leading-tight">Edukasi Penemuan Emas &amp; Facebook Autonomous Publisher</p>
+                    </div>
+                </div>
+
+                <!-- Compact status dots (small screens only) -->
+                <div class="flex lg:hidden items-center gap-2 shrink-0">
+                    <span class="w-2.5 h-2.5 rounded-full" :class="aiState === 'Terhubung' ? 'bg-emerald-400' : 'bg-rose-400'"
+                          :title="`${aiLabel}: ${aiState}`"></span>
+                    <span class="w-2.5 h-2.5 rounded-full" :class="activePage ? 'bg-blue-400' : 'bg-rose-400'"
+                          :title="activePage ? activePage.name : 'Belum ada Fanspage'"></span>
+                </div>
+            </div>
+
+            <!-- Row 2: Status badges (large screens) + page selector + tab navigation.
+                 Stacked below lg so the five tabs keep the full width. -->
+            <div class="flex flex-col lg:flex-row items-stretch lg:items-center gap-2 lg:gap-3 lg:shrink-0">
+                <div class="hidden xl:flex items-center gap-2 text-xs px-3 py-1.5 rounded-full border border-darkborder bg-slate-900/60 shrink-0">
+                    <span class="w-2 h-2 rounded-full" :class="aiState === 'Terhubung' ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'"></span>
+                    <span class="text-slate-400" x-text="`${aiLabel}:`"></span>
+                    <span class="font-medium text-slate-200" x-text="aiState"></span>
+                </div>
+
+                <div class="hidden 2xl:flex items-center gap-2 text-xs px-3 py-1.5 rounded-full border border-darkborder bg-slate-900/60 shrink-0">
+                    <template x-if="activePage && activePage.picture_url">
+                        <img :src="activePage.picture_url" alt="" class="w-4 h-4 rounded-full object-cover">
+                    </template>
+                    <template x-if="!activePage || !activePage.picture_url">
+                        <i class="fa-brands fa-facebook text-blue-500"></i>
+                    </template>
+                    <span class="font-medium text-slate-200 truncate max-w-[110px]"
+                          x-text="pages.length ? `${pages.length} Fanspage` : 'Belum ada Fanspage'"></span>
+                </div>
+
+                <!-- Active page selector: everything in Studio & Analitik follows this -->
+                <div x-show="pages.length > 0" x-cloak class="relative shrink-0 w-full lg:w-auto">
+                    <label for="page-switch" class="sr-only">Fanspage aktif</label>
+                    <select id="page-switch" x-model.number="activePageId" @change="onPageSwitch()"
+                            class="w-full lg:w-auto lg:max-w-[190px] bg-slate-900 border border-darkborder rounded-lg pl-8 pr-7 py-2 lg:py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-2 focus:ring-gold-500/60 truncate">
+                        <template x-for="p in pages" :key="p.id">
+                            <option :value="p.id" x-text="p.name"></option>
+                        </template>
+                    </select>
+                    <i class="fa-brands fa-facebook text-blue-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+                </div>
+
+                <!-- Tab Navigation: full-width grid on mobile, inline on desktop -->
+                <nav aria-label="Navigasi utama"
+                     class="grid grid-cols-5 lg:flex gap-1 w-full lg:w-auto bg-slate-900/80 p-1 rounded-lg border border-darkborder">
+                    <button @click="switchTab('generator')"
+                            :aria-current="activeTab === 'generator' ? 'page' : false"
+                            :class="activeTab === 'generator' ? 'bg-gold-500 text-slate-950 font-semibold shadow' : 'text-slate-300 hover:text-white'"
+                            class="px-1 lg:px-2.5 xl:px-3.5 py-1.5 text-[11px] lg:text-xs rounded-md transition flex flex-col lg:flex-row items-center justify-center gap-0.5 lg:gap-1.5">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> Studio
+                    </button>
+                    <button @click="switchTab('analytics')"
+                            :aria-current="activeTab === 'analytics' ? 'page' : false"
+                            :class="activeTab === 'analytics' ? 'bg-gold-500 text-slate-950 font-semibold shadow' : 'text-slate-300 hover:text-white'"
+                            class="px-1 lg:px-2.5 xl:px-3.5 py-1.5 text-[11px] lg:text-xs rounded-md transition flex flex-col lg:flex-row items-center justify-center gap-0.5 lg:gap-1.5">
+                        <i class="fa-solid fa-chart-line"></i> Analitik
+                    </button>
+                    <button @click="switchTab('replies')"
+                            :aria-current="activeTab === 'replies' ? 'page' : false"
+                            :class="activeTab === 'replies' ? 'bg-gold-500 text-slate-950 font-semibold shadow' : 'text-slate-300 hover:text-white'"
+                            class="px-1 lg:px-2.5 xl:px-3.5 py-1.5 text-[11px] lg:text-xs rounded-md transition flex flex-col lg:flex-row items-center justify-center gap-0.5 lg:gap-1.5 relative">
+                        <i class="fa-regular fa-comments"></i> Komentar
+                        <span x-show="pendingRepliesCount > 0" x-cloak
+                              class="absolute -top-1 -right-1 min-w-[1.1rem] h-[1.1rem] px-1 rounded-full bg-gold-500 text-slate-950 text-[10px] font-bold leading-[1.1rem] text-center"
+                              :title="`${pendingRepliesCount} balasan menunggu persetujuan`"
+                              x-text="pendingRepliesCount"></span>
+                    </button>
+                    <button @click="switchTab('pages')"
+                            :aria-current="activeTab === 'pages' ? 'page' : false"
+                            :class="activeTab === 'pages' ? 'bg-gold-500 text-slate-950 font-semibold shadow' : 'text-slate-300 hover:text-white'"
+                            class="px-1 lg:px-2.5 xl:px-3.5 py-1.5 text-[11px] lg:text-xs rounded-md transition flex flex-col lg:flex-row items-center justify-center gap-0.5 lg:gap-1.5 relative">
+                        <i class="fa-brands fa-facebook"></i> Fanspage
+                        <span x-show="pages.length === 0" x-cloak
+                              class="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-rose-400"
+                              title="Belum ada Fanspage terdaftar"></span>
+                    </button>
+                    <button @click="switchTab('settings')"
+                            :aria-current="activeTab === 'settings' ? 'page' : false"
+                            :class="activeTab === 'settings' ? 'bg-gold-500 text-slate-950 font-semibold shadow' : 'text-slate-300 hover:text-white'"
+                            class="px-1 lg:px-2.5 xl:px-3.5 py-1.5 text-[11px] lg:text-xs rounded-md transition flex flex-col lg:flex-row items-center justify-center gap-0.5 lg:gap-1.5 relative">
+                        <i class="fa-solid fa-gear"></i> Pengaturan
+                        <span x-show="settingsDirty" x-cloak
+                              class="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-rose-400"
+                              title="Ada perubahan yang belum disimpan"></span>
+                    </button>
+                </nav>
+                <!-- Desktop only; on mobile, log out from the Akun Login card in Pengaturan -->
+                <button @click="logout()" :title="`Keluar (${authEmail})`" aria-label="Keluar"
+                        class="hidden lg:flex shrink-0 w-8 h-8 items-center justify-center rounded-md border border-darkborder text-slate-300 hover:text-rose-300 hover:border-rose-500/40 transition">
+                    <i class="fa-solid fa-right-from-bracket"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
+        <div x-show="Object.keys(dataErrors).length" x-cloak role="alert" class="mb-5 p-4 border border-rose-500/40 rounded-xl text-rose-200">
+            Pembaruan gagal. Data mungkin belum terbaru.
+            <button @click="retryData()" class="ml-3 underline py-2">Coba Lagi</button>
+        </div>
+        <p x-show="isLoadingPage" x-cloak role="status" class="mb-4 text-slate-300">Memuat data Fanspage…</p>
+        <div x-show="aiMissingKey || !pages.length || settingsDirty" x-cloak class="mb-5 p-4 bg-darkcard border border-darkborder rounded-xl text-sm text-slate-300">
+            <strong>Mulai membuat konten</strong>
+            <div class="flex flex-wrap gap-3 mt-2">
+                <button @click="switchTab('settings')" class="py-2 underline" x-text="`1. Hubungkan dan simpan ${aiLabel}`">1. Hubungkan dan simpan AI</button>
+                <button @click="switchTab('pages')" class="py-2 underline">2. Tambah Fanspage</button>
+                <button @click="switchTab('generator')" class="py-2 underline">3. Buat konten pertama</button>
+            </div>
+        </div>
+
+
+        <!-- ======================================================== -->
+        <!-- TAB 1: STUDIO GENERATOR & LIVE FACEBOOK PREVIEW          -->
+        <!-- ======================================================== -->
+        <div x-show="activeTab === 'generator'" x-cloak class="space-y-6">
+            <!-- Top Control Bar -->
+            <div class="bg-darkcard border border-darkborder rounded-xl p-5 sm:p-6 shadow-lg flex flex-col md:flex-row md:items-end justify-between gap-4">
+                <div class="flex-1 w-full min-w-0">
+                    <label for="topic-select" class="block text-xs font-semibold text-gold-400 uppercase tracking-wider mb-1.5">
+                        <i class="fa-solid fa-lightbulb mr-1"></i> Pilih Topik Geologi Emas
+                    </label>
+                    <select id="topic-select" x-model="selectedTopicId"
+                            class="w-full bg-slate-900 border border-darkborder rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/60 focus:border-gold-500 text-slate-200">
+                        <option value="auto">🤖 Auto-Select by AI Feedback Loop</option>
+                        <optgroup label="📚 Topik Dasar (kurikulum fondasi)">
+                            <template x-for="t in baseTopics" :key="t.id">
+                                <option :value="t.id" x-text="`[${t.category}] ${t.title} — bobot ${t.weight}`"></option>
+                            </template>
+                        </optgroup>
+                        <optgroup label="🧬 Turunan AI (hasil pembelajaran)" x-show="variantTopics.length > 0">
+                            <template x-for="t in variantTopics" :key="t.id">
+                                <option :value="t.id" x-text="`[${t.category}] ${t.title} — bobot ${t.weight}`"></option>
+                            </template>
+                        </optgroup>
+                    </select>
+                </div>
+
+                <button @click="generateContent()"
+                        :disabled="isGenerating || isRegenerating || !readyToGenerate"
+                        class="w-full md:w-auto shrink-0 px-6 py-2.5 rounded-lg font-semibold text-sm transition flex items-center justify-center gap-2 shadow-lg focus:outline-none focus:ring-2 focus:ring-gold-500/60"
+                        :class="isGenerating ? 'bg-slate-700 text-slate-400 cursor-not-allowed' : 'bg-gradient-to-r from-gold-500 to-gold-600 hover:from-gold-400 hover:to-gold-500 text-slate-950 shadow-gold-500/20'">
+                    <i :class="isGenerating ? 'fa-solid fa-circle-notch fa-spin' : 'fa-solid fa-bolt'"></i>
+                    <span x-text="isGenerating ? 'Sedang Memproses AI...' : 'Generate Konten Baru'"></span>
+                </button>
+            </div>
+
+            <!-- Generation Progress Pipeline -->
+            <div x-show="isGenerating" x-cloak x-transition class="bg-darkcard border border-gold-500/40 rounded-xl p-5 sm:p-6 generating-active">
+                <div class="flex items-center justify-between mb-3 gap-3">
+                    <h4 class="text-xs font-semibold text-gold-400 uppercase tracking-wider flex items-center gap-2">
+                        <i class="fa-solid fa-microchip"></i> AI Content Creation Pipeline
+                    </h4>
+                    <span class="text-xs font-mono text-slate-300" x-text="elapsedLabel"></span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                    <div class="p-3 rounded-lg border border-darkborder bg-slate-900/80 flex items-center gap-3">
+                        <i :class="genStep > 1 ? 'fa-solid fa-circle-check text-emerald-400' : 'fa-solid fa-spinner fa-spin text-gold-400'"></i>
+                        <div class="min-w-0">
+                            <p class="font-semibold text-slate-200">1. Kurasi Konsep &amp; Naskah</p>
+                            <p class="text-xs text-slate-400 truncate" x-text="activeTextModel"></p>
+                        </div>
+                    </div>
+                    <div class="p-3 rounded-lg border border-darkborder bg-slate-900/80 flex items-center gap-3">
+                        <i :class="genStep > 2 ? 'fa-solid fa-circle-check text-emerald-400' : (genStep === 2 ? 'fa-solid fa-spinner fa-spin text-gold-400' : 'fa-regular fa-circle text-slate-500')"></i>
+                        <div class="min-w-0">
+                            <p class="font-semibold text-slate-200">2. Render Poster Infografis</p>
+                            <p class="text-xs text-slate-400 truncate" x-text="activeImageModel"></p>
+                        </div>
+                    </div>
+                    <div class="p-3 rounded-lg border border-darkborder bg-slate-900/80 flex items-center gap-3">
+                        <i :class="genStep > 3 ? 'fa-solid fa-circle-check text-emerald-400' : 'fa-regular fa-circle text-slate-500'"></i>
+                        <div class="min-w-0">
+                            <p class="font-semibold text-slate-200">3. Siap Preview &amp; Publish</p>
+                            <p class="text-xs text-slate-400">Simulasi feed Facebook</p>
+                        </div>
+                    </div>
+                </div>
+                <p class="text-xs text-slate-400 mt-3">
+                    <i class="fa-solid fa-circle-info mr-1"></i>
+                    Tahap 1 &amp; 2 adalah estimasi urutan proses di server — biasanya total 20–60 detik.
+                </p>
+            </div>
+
+            <!-- Workspace: Facebook Live Mockup & Controls -->
+            <template x-if="currentPost">
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                    <!-- Left Column: Facebook Mockup -->
+                    <div class="lg:col-span-7 min-w-0">
+                        <div class="flex items-center justify-between mb-2 gap-2">
+                            <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                                <i class="fa-brands fa-facebook text-blue-500 mr-1"></i> Live Facebook Feed Preview
+                            </span>
+                            <span class="text-xs px-2.5 py-0.5 rounded-full border border-darkborder bg-slate-900 text-gold-400 truncate max-w-[50%]"
+                                  x-text="currentPost.visual_title"></span>
+                        </div>
+
+                        <div class="fb-mockup">
+                            <div class="fb-header">
+                                <template x-if="postPage(currentPost) && postPage(currentPost).picture_url">
+                                    <img :src="postPage(currentPost).picture_url" alt="" class="fb-avatar">
+                                </template>
+                                <template x-if="!postPage(currentPost) || !postPage(currentPost).picture_url">
+                                    <div class="fb-avatar flex items-center justify-center text-slate-400">
+                                        <i class="fa-solid fa-mountain"></i>
+                                    </div>
+                                </template>
+                                <div class="fb-author">
+                                    <div class="fb-author-name" x-text="postPage(currentPost) ? postPage(currentPost).name : 'Belum terikat Fanspage'"></div>
+                                    <div class="fb-time">
+                                        <span x-text="currentPost.status === 'published' ? formatDate(currentPost.published_at) : 'Baru saja'"></span>
+                                        · <i class="fa-solid fa-earth-americas text-xs"></i>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Caption: clamped to 3 lines like the real feed -->
+                            <div class="fb-content-text" :class="captionExpanded ? '' : 'fb-clamp'" x-text="currentPost.caption"></div>
+                            <button @click="captionExpanded = !captionExpanded"
+                                    class="fb-more"
+                                    x-text="captionExpanded ? 'Tampilkan lebih sedikit' : 'Lihat selengkapnya'"></button>
+
+                            <!-- Poster, sized to the chosen aspect ratio so there are no black bars -->
+                            <div class="fb-media cursor-zoom-in"
+                                 :style="`aspect-ratio: ${((postPage(currentPost) && postPage(currentPost).aspect_ratio) || '3:4').replace(':', '/')}`"
+                                 @click="openImageModal(currentPost.image_url)"
+                                 role="button"
+                                 tabindex="0"
+                                 @keydown.enter="openImageModal(currentPost.image_url)"
+                                 aria-label="Perbesar poster">
+                                <img :src="currentPost.image_url" alt="Poster infografis edukasi emas">
+                            </div>
+
+                            <!-- Static illustration of the Facebook action bar (not interactive) -->
+                            <div class="fb-footer-bar" aria-hidden="true">
+                                <span><i class="fa-regular fa-thumbs-up"></i> Suka</span>
+                                <span><i class="fa-regular fa-comment"></i> Komentar</span>
+                                <span><i class="fa-solid fa-share"></i> Bagikan</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right Column: Editor & actions (sticky on desktop) -->
+                    <div class="lg:col-span-5 space-y-4 lg:sticky lg:top-20">
+                        <div class="bg-darkcard border border-darkborder rounded-xl p-5 sm:p-6 shadow-lg space-y-4">
+                            <div class="flex items-center justify-between border-b border-darkborder pb-3 gap-2">
+                                <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                                    <i class="fa-solid fa-pen-to-square text-gold-400"></i> Kontrol &amp; Editor Caption
+                                </h3>
+                                <div class="flex items-center gap-1.5 shrink-0">
+                                    <template x-if="currentPost.is_orphan">
+                                        <span class="text-xs px-2 py-0.5 rounded-full border bg-amber-500/10 text-amber-300 border-amber-500/30"
+                                              title="Fanspage asal draft ini sudah dihapus">Tanpa Fanspage</span>
+                                    </template>
+                                    <span class="text-xs px-2 py-0.5 rounded-full border"
+                                          :class="statusBadgeClass(currentPost.status)"
+                                          x-text="statusLabel(currentPost.status)"></span>
+                                </div>
+                            </div>
+
+                            <template x-if="currentPost.status === 'published'">
+                                <div class="text-xs bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 rounded-lg p-3 flex items-start gap-2">
+                                    <i class="fa-solid fa-circle-check mt-0.5"></i>
+                                    <span>
+                                        Sudah tayang di Fanspage.
+                                        <a :href="currentPost.fb_post_url" target="_blank" rel="noopener"
+                                           class="underline hover:text-emerald-200">Buka postingan →</a>
+                                    </span>
+                                </div>
+                            </template>
+
+                            <template x-if="currentPost.error_message">
+                                <div class="text-xs bg-rose-500/10 border border-rose-500/30 text-rose-300 rounded-lg p-3 flex items-start gap-2">
+                                    <i class="fa-solid fa-triangle-exclamation mt-0.5"></i>
+                                    <span x-text="currentPost.error_message"></span>
+                                </div>
+                            </template>
+
+                            <div>
+                                <label for="visual-title" class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                                    Judul Catatan
+                                </label>
+                                <p class="text-xs text-slate-400 mb-2">Untuk mengenali draft; tidak mengubah tulisan pada gambar. Render ulang memakai prompt gambar tersimpan.</p>
+                                <input id="visual-title" type="text" x-model="currentPost.visual_title"
+                                       :disabled="isRegenerating || isRewritingCaption || isPublishing || isSavingDraft || currentPost.status === 'published'"
+                                       class="w-full bg-slate-900 border border-darkborder rounded-lg px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/60 focus:border-gold-500 text-slate-200 disabled:opacity-60">
+                            </div>
+
+                            <div>
+                                <div class="flex items-center justify-between mb-1.5 gap-2">
+                                    <label for="caption-editor" class="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                                        Caption Facebook
+                                    </label>
+                                    <span class="text-xs text-slate-400 font-mono" x-text="`${(currentPost.caption || '').length} karakter`"></span>
+                                </div>
+                                <textarea id="caption-editor" x-model="currentPost.caption" rows="12"
+                                          :disabled="isRegenerating || isRewritingCaption || isPublishing || isSavingDraft || currentPost.status === 'published'"
+                                          class="w-full bg-slate-900 border border-darkborder rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/60 focus:border-gold-500 text-slate-200 disabled:opacity-60"></textarea>
+                                <div class="mt-1.5 flex items-center justify-between gap-2 flex-wrap">
+                                    <button @click="copyCaption()" class="text-xs text-slate-400 hover:text-gold-400 transition flex items-center gap-1.5">
+                                        <i class="fa-regular fa-copy"></i> Salin caption
+                                    </button>
+                                    <button @click="regenerateCaption(currentPost)" x-show="currentPost.status !== 'published'"
+                                            :disabled="isGenerating || isRegenerating || isRewritingCaption || isPublishing || isSavingDraft"
+                                            :title="`Tulis ulang caption dalam bahasa Fanspage (${captionLanguageLabel(currentPost)}). Gambar tidak berubah.`"
+                                            class="px-2.5 py-1.5 rounded-md text-xs font-semibold border border-gold-500/40 bg-gold-500/10 hover:bg-gold-500/20 text-gold-300 transition flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed">
+                                        <i class="fa-solid fa-wand-magic-sparkles" :class="isRewritingCaption && 'fa-beat-fade'"></i>
+                                        <span x-text="isRewritingCaption ? 'Menulis ulang…' : `Buat Ulang Caption (${captionLanguageLabel(currentPost)})`"></span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="pt-1 flex flex-col gap-2.5">
+                                <p role="status" class="text-xs text-slate-300" x-show="currentPost.status !== 'published'" x-text="isSavingDraft ? 'Menyimpan…' : (draftDirty ? 'Perubahan belum disimpan' : 'Draft tersimpan')"></p>
+                                <button @click="saveDraft()" :disabled="isSavingDraft || isRewritingCaption || !draftDirty" x-show="currentPost.status !== 'published'" class="py-3 rounded-lg bg-gold-500 text-slate-950 font-semibold disabled:opacity-50">Simpan Draft</button>
+                                <p class="text-xs text-slate-300" x-text="`Fanspage tujuan: ${postPage(currentPost)?.name || 'Pilih Fanspage'}`"></p>
+                                <button @click="askPublish(currentPost)"
+                                        :disabled="isPublishing || isRegenerating || isRewritingCaption || isSavingDraft || currentPost.status === 'published'"
+                                        class="w-full py-3 rounded-lg font-bold text-sm transition flex items-center justify-center gap-2 shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-400/60"
+                                        :class="(isPublishing || currentPost.status === 'published') ? 'bg-slate-700 text-slate-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-500/20'">
+                                    <i :class="isPublishing ? 'fa-solid fa-circle-notch fa-spin' : 'fa-brands fa-facebook'"></i>
+                                    <span x-text="currentPost.status === 'published' ? 'Sudah Dipublikasikan' : (isPublishing ? 'Memublikasikan...' : 'Publish ke Fanspage Facebook')"></span>
+                                </button>
+
+                                <div class="grid grid-cols-2 gap-2.5">
+                                    <button @click="regenerateImage(currentPost.id)"
+                                            :disabled="isGenerating || isRegenerating || currentPost.status === 'published'"
+                                            class="py-2.5 rounded-lg font-semibold text-xs transition flex items-center justify-center gap-2 border border-darkborder bg-slate-900 hover:bg-slate-800 text-slate-200 disabled:opacity-50 disabled:cursor-not-allowed">
+                                        <i class="fa-solid fa-rotate" :class="isRegenerating && 'fa-spin'"></i>
+                                        <span x-text="isRegenerating ? 'Merender ulang…' : 'Render Ulang Gambar'"></span>
+                                    </button>
+                                    <button @click="askDelete(currentPost)"
+                                            :disabled="isRegenerating || isRewritingCaption || isPublishing || isSavingDraft || currentPost.status === 'published'"
+                                            class="py-2.5 rounded-lg font-semibold text-xs transition flex items-center justify-center gap-2 border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 disabled:opacity-40 disabled:cursor-not-allowed">
+                                        <i class="fa-regular fa-trash-can"></i>
+                                        Hapus Draft
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Prompt Information Card -->
+                        <div x-data="{ open: false }" class="bg-darkcard/60 border border-darkborder rounded-xl p-5 text-xs">
+                            <button @click="open = !open" class="w-full flex items-center justify-between text-slate-300 hover:text-white transition">
+                                <span class="font-semibold uppercase tracking-wider">Prompt gambar yang digunakan</span>
+                                <i :class="open ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'"></i>
+                            </button>
+                            <p x-show="open" x-cloak x-transition
+                               class="text-slate-300 italic text-xs leading-relaxed bg-slate-950 p-2.5 rounded border border-darkborder/50 mt-2.5"
+                               x-text="currentPost.prompt_used"></p>
+                        </div>
+                    </div>
+                </div>
+            </template>
+
+            <!-- Empty State -->
+            <template x-if="!currentPost && !isGenerating">
+                <div class="bg-darkcard border border-darkborder rounded-xl p-8 sm:p-12 text-center max-w-xl mx-auto space-y-4">
+                    <div class="w-16 h-16 rounded-2xl bg-gold-500/10 border border-gold-500/30 flex items-center justify-center mx-auto text-gold-400 text-2xl">
+                        <i class="fa-solid fa-scroll"></i>
+                    </div>
+                    <h3 class="text-lg font-bold text-white">Belum Ada Konten di Studio</h3>
+                    <p class="text-sm text-slate-300">
+                        Klik <strong>"Generate Konten Baru"</strong> di atas. AI akan memilih topik geologi terbaik,
+                        menyusun infografis penampang sungai, dan menyiapkan caption edukasi untuk Anda.
+                    </p>
+                    <template x-if="aiMissingKey">
+                        <button @click="switchTab('settings')"
+                                class="text-xs font-semibold px-4 py-2 rounded-lg border border-gold-500/40 bg-gold-500/10 text-gold-400 hover:bg-gold-500/20 transition">
+                            <i class="fa-solid fa-key mr-1.5"></i> <span x-text="`Isi ${aiMissingKey} API Key dulu`"></span>
+                        </button>
+                    </template>
+                </div>
+            </template>
+        </div>
+
+        <!-- ======================================================== -->
+        <!-- TAB 2: POSTS & FEEDBACK LOOP ANALYTICS                   -->
+        <!-- ======================================================== -->
+        <div x-show="activeTab === 'analytics'" x-cloak class="space-y-6">
+            <p class="text-xs text-slate-400" x-text="analyticsSummary.last_updated ? `Metrik diperbarui: ${formatDate(analyticsSummary.last_updated)}` : 'Metrik belum tersedia — publikasikan konten lalu perbarui metrik.'"></p>
+            <!-- KPI Bar -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="bg-darkcard border border-darkborder rounded-xl p-5 sm:p-6 shadow">
+                    <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Postingan</span>
+                    <h3 class="text-2xl font-black text-white mt-1" x-text="analyticsSummary.total_posts || 0"></h3>
+                    <span class="text-xs text-slate-400">Telah terbit ke Fanspage</span>
+                </div>
+                <div class="bg-darkcard border border-darkborder rounded-xl p-5 sm:p-6 shadow">
+                    <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Jangkauan (Reach)</span>
+                    <h3 class="text-2xl font-black text-gold-400 mt-1" x-text="analyticsSummary.has_metrics ? (analyticsSummary.total_reach || 0).toLocaleString('id-ID') : '—'"></h3>
+                    <span class="text-xs text-slate-400">Dari Facebook Insights</span>
+                </div>
+                <div class="bg-darkcard border border-darkborder rounded-xl p-5 sm:p-6 shadow">
+                    <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Engagement</span>
+                    <h3 class="text-2xl font-black text-emerald-400 mt-1" x-text="analyticsSummary.has_metrics ? (analyticsSummary.total_engagement || 0).toLocaleString('id-ID') : '—'"></h3>
+                    <span class="text-xs text-slate-400">Likes + Comments + Shares</span>
+                </div>
+                <div class="bg-darkcard border border-darkborder rounded-xl p-5 sm:p-6 shadow min-w-0">
+                    <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Topik Pemenang</span>
+                    <h3 class="text-sm font-bold text-white mt-1 line-clamp-2" x-text="analyticsSummary.winning_topic || 'Dalam Pembelajaran'"></h3>
+                    <span class="text-xs text-gold-400">Berdasarkan skor performa terkumpul</span>
+                </div>
+            </div>
+
+            <!-- Weekly Trend & Topic Evolution -->
+            <div class="bg-darkcard border border-gold-500/30 rounded-xl p-5 sm:p-6 shadow-lg">
+                <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-4">
+                    <div class="min-w-0">
+                        <h3 class="text-base font-bold text-white flex items-center gap-2">
+                            <i class="fa-solid fa-arrow-trend-up text-gold-400"></i>
+                            Tren <span x-text="windowStats.window_days"></span> Hari Terakhir
+                        </h3>
+                        <p class="text-xs text-slate-400 mt-0.5">
+                            Peringkat topik berdasarkan jangkauan postingan yang tayang dalam periode ini —
+                            inilah dasar AI memilih dan melahirkan topik baru.
+                        </p>
+                    </div>
+                    <div class="flex gap-1 shrink-0 bg-slate-900/80 p-1 rounded-lg border border-darkborder">
+                        <template x-for="d in [7, 14, 30]" :key="d">
+                            <button @click="fetchWindowStats(d)"
+                                    :class="windowDays === d ? 'bg-gold-500 text-slate-950 font-semibold' : 'text-slate-300 hover:text-white'"
+                                    class="px-3 py-1.5 text-xs rounded-md transition"
+                                    x-text="`${d} hari`"></button>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- Window summary -->
+                <div class="grid grid-cols-3 gap-3 mb-4">
+                    <div class="bg-slate-900/70 border border-darkborder rounded-lg p-3">
+                        <span class="text-xs text-slate-400 uppercase tracking-wider">Postingan</span>
+                        <p class="text-lg font-black text-white" x-text="windowStats.posts_in_window || 0"></p>
+                    </div>
+                    <div class="bg-slate-900/70 border border-darkborder rounded-lg p-3">
+                        <span class="text-xs text-slate-400 uppercase tracking-wider">Total Reach</span>
+                        <p class="text-lg font-black text-gold-400" x-text="(windowStats.total_reach || 0).toLocaleString('id-ID')"></p>
+                    </div>
+                    <div class="bg-slate-900/70 border border-darkborder rounded-lg p-3">
+                        <span class="text-xs text-slate-400 uppercase tracking-wider">Topik Tayang</span>
+                        <p class="text-lg font-black text-white" x-text="windowStats.topics_in_window || 0"></p>
+                    </div>
+                </div>
+
+                <!-- Leaderboard -->
+                <div class="space-y-2" x-show="(windowStats.ranking || []).length > 0" x-cloak>
+                    <template x-for="(row, i) in windowStats.ranking" :key="row.topic_id">
+                        <div class="flex items-center gap-3 bg-slate-900/60 border rounded-lg p-3"
+                             :class="i === 0 ? 'border-gold-500/40' : 'border-darkborder'">
+                            <span class="w-7 h-7 shrink-0 rounded-full flex items-center justify-center text-xs font-black"
+                                  :class="i === 0 ? 'bg-gold-500 text-slate-950' : 'bg-slate-800 text-slate-300'"
+                                  x-text="i + 1"></span>
+                            <div class="min-w-0 flex-1">
+                                <p class="text-xs font-semibold text-slate-100 truncate" x-text="row.topic_title"></p>
+                                <p class="text-xs text-slate-400">
+                                    <span x-text="`${row.posts} postingan`"></span> ·
+                                    <span x-text="`rata-rata ${row.avg_reach.toLocaleString('id-ID')} reach`"></span> ·
+                                    <span x-text="`👍 ${row.reactions} 💬 ${row.comments} ↗ ${row.shares}`"></span>
+                                </p>
+                            </div>
+                            <div class="text-right shrink-0">
+                                <p class="text-sm font-black text-gold-400" x-text="row.reach.toLocaleString('id-ID')"></p>
+                                <p class="text-xs text-slate-400 uppercase tracking-wider">reach</p>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+
+                <p x-show="(windowStats.ranking || []).length === 0" x-cloak
+                   class="text-xs text-slate-400 bg-slate-900/60 border border-darkborder rounded-lg p-4 text-center">
+                    Belum ada postingan dengan metrik dalam periode ini.
+                    Publikasikan konten lalu klik <strong class="text-slate-200">Refresh Metrik Facebook</strong>.
+                </p>
+
+                <!-- Evolution action -->
+                <div class="mt-4 pt-4 border-t border-darkborder flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <p class="text-xs text-slate-300 min-w-0">
+                        <i class="fa-solid fa-dna text-gold-400 mr-1"></i>
+                        <strong class="text-slate-100">Evolusi Topik:</strong>
+                        AI mempelajari <span class="text-sky-300" x-text="`${baseTopics.length} topik dasar`"></span>
+                        lalu merancang bab lanjutan dari pemenang di atas.
+                        <span x-show="schedule.next_evolution" x-cloak class="text-slate-400">
+                            Otomatis tiap Senin — berikutnya <span x-text="formatDate(schedule.next_evolution)"></span>.
+                        </span>
+                    </p>
+                    <button @click="askEvolveTopics()" :disabled="isEvolving"
+                            class="shrink-0 px-4 py-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 disabled:opacity-50"
+                            :class="isEvolving ? 'bg-slate-700 text-slate-400' : 'bg-gradient-to-r from-gold-500 to-gold-600 hover:from-gold-400 hover:to-gold-500 text-slate-950'">
+                        <i :class="isEvolving ? 'fa-solid fa-circle-notch fa-spin' : 'fa-solid fa-wand-sparkles'"></i>
+                        <span x-text="isEvolving ? 'AI sedang merancang...' : 'Buat Topik Baru dari Pemenang'"></span>
+                    </button>
+                </div>
+
+                <!-- Evolution result -->
+                <template x-if="evolveResult && evolveResult.success">
+                    <div class="mt-3 space-y-2">
+                        <template x-for="t in evolveResult.created" :key="t.id">
+                            <div class="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-3">
+                                <div class="flex items-center gap-2 mb-1 flex-wrap">
+                                    <span class="text-xs font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">TOPIK BARU</span>
+                                    <span class="text-xs text-emerald-300/80" x-text="t.category"></span>
+                                    <template x-if="t.base_topic">
+                                        <span class="text-xs text-sky-300">
+                                            <i class="fa-solid fa-code-branch"></i>
+                                            <span x-text="`dari: ${t.base_topic}`"></span>
+                                        </span>
+                                    </template>
+                                </div>
+                                <p class="text-xs font-semibold text-emerald-100" x-text="t.title"></p>
+                                <p class="text-xs text-emerald-300/80 mt-1" x-text="t.origin_note"></p>
+                            </div>
+                        </template>
+                    </div>
+                </template>
+            </div>
+
+            <!-- Topic Performance Ranking -->
+            <div class="bg-darkcard border border-darkborder rounded-xl p-5 sm:p-6 shadow-lg">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                    <div>
+                        <h3 class="text-base font-bold text-white flex items-center gap-2">
+                            <i class="fa-solid fa-ranking-star text-gold-400"></i> Peringkat Topik &amp; Bobot Pembelajaran
+                        </h3>
+                        <p class="text-xs text-slate-400 mt-0.5">
+                            Semakin tinggi bobot, semakin sering topik diproduksi otomatis.
+                            <span class="text-slate-300"
+                                  x-text="`${baseTopics.length} topik dasar · ${variantTopics.length} turunan AI`"></span>
+                        </p>
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                        <label class="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer">
+                            <input type="checkbox" x-model="showInactiveTopics" @change="fetchTopics()"
+                                   class="rounded border-darkborder bg-slate-900 text-gold-500 focus:ring-gold-500/60">
+                            Tampilkan nonaktif
+                        </label>
+                        <button @click="triggerOptimization()" :disabled="isOptimizing"
+                                class="px-3.5 py-2 rounded-lg border border-darkborder bg-slate-900 hover:bg-slate-800 text-xs font-semibold text-gold-400 transition flex items-center justify-center gap-1.5 disabled:opacity-50">
+                            <i class="fa-solid fa-arrows-rotate" :class="isOptimizing && 'fa-spin'"></i> Hitung Ulang Bobot
+                        </button>
+                    </div>
+                </div>
+
+                <button @click="topicsExpanded = !topicsExpanded" :aria-expanded="topicsExpanded" class="mb-4 py-2 text-sm text-gold-400" x-text="topicsExpanded ? 'Ringkas daftar topik' : 'Lihat semua topik'"></button>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <template x-for="top in (topicsExpanded ? topics : topics.slice(0, 2))" :key="top.id">
+                        <div class="bg-slate-900/70 border rounded-lg p-3.5"
+                             :class="top.is_active === false ? 'border-darkborder opacity-50' : (top.source === 'ai' ? 'border-emerald-500/30' : 'border-darkborder')">
+                            <div class="flex items-center justify-between mb-1.5 gap-2">
+                                <div class="flex items-center gap-1.5 min-w-0">
+                                    <span class="text-xs font-bold px-2 py-0.5 rounded border shrink-0"
+                                          :class="categoryClass(top.category)" x-text="top.category"></span>
+                                    <template x-if="top.is_base">
+                                        <span class="text-xs font-bold px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30 shrink-0"
+                                              title="Topik dasar: kurikulum fondasi yang selalu diajarkan">
+                                            <i class="fa-solid fa-book"></i> DASAR
+                                        </span>
+                                    </template>
+                                    <template x-if="top.source === 'ai'">
+                                        <span class="text-xs font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0"
+                                              title="Turunan hasil pembelajaran AI dari topik dasar">
+                                            <i class="fa-solid fa-dna"></i> TURUNAN
+                                        </span>
+                                    </template>
+                                    <template x-if="top.variant_count > 0">
+                                        <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-darkborder shrink-0"
+                                              :title="`Sudah melahirkan ${top.variant_count} topik turunan`"
+                                              x-text="`+${top.variant_count}`"></span>
+                                    </template>
+                                    <template x-if="top.is_active === false">
+                                        <span class="text-xs font-bold px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 shrink-0">NONAKTIF</span>
+                                    </template>
+                                </div>
+                                <span class="text-xs font-mono font-bold text-gold-400 shrink-0" x-text="`Bobot ${top.weight}`"></span>
+                            </div>
+                            <h4 class="text-xs font-semibold text-slate-100 line-clamp-1 mb-2" x-text="top.title" :title="top.title"></h4>
+                            <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                                <div class="h-full rounded-full transition-all"
+                                     :class="top.weight >= 1.3 ? 'bg-gradient-to-r from-gold-500 to-amber-400' : 'bg-slate-600'"
+                                     :style="`width: ${Math.min(100, (top.weight / 3) * 100)}%`"></div>
+                            </div>
+                            <div class="flex justify-between items-center text-xs text-slate-400 mt-2 gap-2">
+                                <span class="truncate" x-text="`Diposting ${top.posts_count}× · avg reach ${Math.round(top.avg_reach).toLocaleString('id-ID')}`"></span>
+                                <template x-if="top.is_active === false">
+                                    <button @click="setTopicActive(top, true)"
+                                            class="shrink-0 text-emerald-300 hover:text-emerald-200 transition" title="Aktifkan kembali">
+                                        <i class="fa-solid fa-rotate-left"></i>
+                                    </button>
+                                </template>
+                                <!-- Base curriculum topics are permanent: no retire button -->
+                                <template x-if="top.is_active !== false && !top.is_base">
+                                    <button @click="askRetireTopic(top)"
+                                            class="shrink-0 text-slate-400 hover:text-rose-300 transition" title="Nonaktifkan topik turunan">
+                                        <i class="fa-solid fa-ban"></i>
+                                    </button>
+                                </template>
+                                <template x-if="top.is_base">
+                                    <i class="fa-solid fa-lock text-slate-500 shrink-0 text-xs" title="Topik dasar bersifat permanen"></i>
+                                </template>
+                            </div>
+                            <template x-if="top.base_topic_title">
+                                <p class="text-xs text-slate-400 mt-2 truncate">
+                                    <i class="fa-solid fa-code-branch mr-1"></i>
+                                    Turunan dari: <span class="text-sky-300" x-text="top.base_topic_title"></span>
+                                </p>
+                            </template>
+                            <template x-if="top.origin_note">
+                                <p class="text-xs text-emerald-300/70 mt-1 line-clamp-2" x-text="top.origin_note"></p>
+                            </template>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Post History -->
+            <div class="bg-darkcard border border-darkborder rounded-xl p-5 sm:p-6 shadow-lg">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                    <h3 class="text-base font-bold text-white flex items-center gap-2">
+                        <i class="fa-solid fa-clock-rotate-left text-slate-400"></i> Riwayat Postingan
+                        <span x-show="postsTotal > 0" x-cloak class="text-xs font-normal text-slate-400"
+                              x-text="`(${postsTotal})`"></span>
+                    </h3>
+                    <button @click="refreshAllMetrics()" :disabled="isSyncing"
+                            class="shrink-0 px-3.5 py-2 rounded-lg border border-darkborder bg-slate-900 hover:bg-slate-800 text-xs font-semibold text-slate-200 transition flex items-center justify-center gap-1.5 disabled:opacity-50">
+                        <i class="fa-solid fa-sync" :class="isSyncing && 'fa-spin'"></i> Refresh Metrik Facebook
+                    </button>
+                </div>
+
+                <div class="p-4 flex flex-col sm:flex-row gap-3">
+                    <label class="flex-1 text-xs text-slate-300">Cari judul<input type="search" x-model="historySearch" @input.debounce.350ms="fetchPosts()" class="block w-full bg-slate-900 border border-darkborder rounded-lg p-3 mt-1" placeholder="Cari di seluruh riwayat"></label>
+                    <label class="text-xs text-slate-300">Status<select x-model="historyStatus" @change="fetchPosts()" class="block bg-slate-900 border border-darkborder rounded-lg p-3 mt-1"><option value="">Semua status</option><option value="ready">Siap terbit</option><option value="draft">Draft</option><option value="publishing">Sedang dipublikasikan</option><option value="published">Tayang</option><option value="failed">Gagal</option></select></label>
+                </div>
+                <!-- Desktop table -->
+                <div class="hidden md:block overflow-x-auto">
+                    <table class="w-full text-left text-xs text-slate-200">
+                        <thead class="bg-slate-900/80 text-slate-300 uppercase tracking-wider text-xs border-b border-darkborder">
+                            <tr>
+                                <th scope="col" class="p-3">Poster</th>
+                                <th scope="col" class="p-3">Judul &amp; Topik</th>
+                                <th scope="col" class="p-3 text-center">Status</th>
+                                <th scope="col" class="p-3 text-center">Reaksi</th>
+                                <th scope="col" class="p-3 text-center">Komentar</th>
+                                <th scope="col" class="p-3 text-center">Bagikan</th>
+                                <th scope="col" class="p-3 text-center">Reach</th>
+                                <th scope="col" class="p-3 text-right">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-darkborder">
+                            <template x-for="p in postsList" :key="p.id">
+                                <tr class="hover:bg-slate-900/40 transition">
+                                    <td class="p-3">
+                                        <img :src="p.image_url" alt="" class="w-12 h-16 object-cover rounded shadow cursor-zoom-in"
+                                             @click="openImageModal(p.image_url)">
+                                    </td>
+                                    <td class="p-3 max-w-xs">
+                                        <button @click="openInStudio(p)" class="text-left group">
+                                            <p class="font-bold text-slate-100 line-clamp-1 group-hover:text-gold-400 transition" x-text="p.visual_title"></p>
+                                            <p class="text-xs text-slate-400 truncate" x-text="p.topic_title"></p>
+                                            <p class="text-xs text-slate-400 mt-0.5" x-text="formatDate(p.created_at)"></p>
+                                        </button>
+                                    </td>
+                                    <td class="p-3 text-center whitespace-nowrap">
+                                        <span class="px-2 py-0.5 rounded text-xs font-semibold border"
+                                              :class="statusBadgeClass(p.status)" x-text="statusLabel(p.status)"></span>
+                                        <template x-if="p.is_orphan">
+                                            <span class="block mt-1 px-2 py-0.5 rounded text-xs font-semibold border bg-amber-500/10 text-amber-300 border-amber-500/30"
+                                                  title="Fanspage asal sudah dihapus">Tanpa Fanspage</span>
+                                        </template>
+                                    </td>
+                                    <td class="p-3 text-center font-mono" x-text="p.metrics?.reactions ?? '—'"></td>
+                                    <td class="p-3 text-center font-mono" x-text="p.metrics?.comments ?? '—'"></td>
+                                    <td class="p-3 text-center font-mono" x-text="p.metrics?.shares ?? '—'"></td>
+                                    <td class="p-3 text-center font-mono font-bold text-gold-400"
+                                        x-text="p.metrics ? p.metrics.reach.toLocaleString('id-ID') : '—'"></td>
+                                    <td class="p-3 text-right whitespace-nowrap space-x-1.5">
+                                        <button @click="openInStudio(p)" title="Buka di Studio" aria-label="Buka di Studio"
+                                                class="px-2 py-1 rounded bg-slate-800 text-slate-200 hover:bg-slate-700 border border-darkborder transition">
+                                            <i class="fa-solid fa-up-right-from-square rotate-180"></i>
+                                        </button>
+                                        <template x-if="p.fb_post_url">
+                                            <a :href="p.fb_post_url" target="_blank" rel="noopener" title="Lihat di Facebook"
+                                               class="inline-block px-2 py-1 rounded bg-blue-600/20 text-blue-300 hover:bg-blue-600/30 border border-blue-500/30 transition">
+                                                <i class="fa-brands fa-facebook"></i>
+                                            </a>
+                                        </template>
+                                        <template x-if="p.status !== 'published'">
+                                            <button @click="askPublish(p)" title="Publish sekarang"
+                                                    class="px-2 py-1 rounded bg-gold-500/20 text-gold-300 hover:bg-gold-500/30 border border-gold-500/30 transition">
+                                                <i class="fa-solid fa-paper-plane"></i>
+                                            </button>
+                                        </template>
+                                        <template x-if="p.status !== 'published'">
+                                            <button @click="askDelete(p)" title="Hapus draft" aria-label="Hapus draft"
+                                                    class="px-2 py-1 rounded bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 border border-rose-500/30 transition">
+                                                <i class="fa-regular fa-trash-can"></i>
+                                            </button>
+                                        </template>
+                                    </td>
+                                </tr>
+                            </template>
+                            <template x-if="postsList.length === 0">
+                                <tr>
+                                    <td colspan="8" class="p-8 text-center text-slate-400">Belum ada riwayat postingan.</td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Muat lebih banyak -->
+                <div x-show="postsHasMore" x-cloak class="hidden md:flex justify-center pt-4">
+                    <button @click="loadMorePosts()" :disabled="isLoadingMore"
+                            class="px-4 py-2 rounded-lg text-xs font-semibold border border-darkborder bg-slate-900 hover:bg-slate-800 text-slate-200 transition flex items-center gap-2 disabled:opacity-50">
+                        <i :class="isLoadingMore ? 'fa-solid fa-circle-notch fa-spin' : 'fa-solid fa-chevron-down'"></i>
+                        <span x-text="`Muat lebih banyak (${postsList.length} dari ${postsTotal})`"></span>
+                    </button>
+                </div>
+
+                <!-- Mobile card list -->
+                <div class="md:hidden space-y-3">
+                    <template x-for="p in postsList" :key="'m' + p.id">
+                        <div class="border border-darkborder rounded-lg bg-slate-900/60 p-3 flex gap-3">
+                            <img :src="p.image_url" alt="" class="w-14 h-[74px] object-cover rounded shrink-0 cursor-zoom-in"
+                                 @click="openImageModal(p.image_url)">
+                            <div class="min-w-0 flex-1">
+                                <div class="flex items-start justify-between gap-2">
+                                    <p class="font-bold text-xs text-slate-100 line-clamp-2" x-text="p.visual_title"></p>
+                                    <span class="px-2 py-0.5 rounded text-xs font-semibold border shrink-0"
+                                          :class="statusBadgeClass(p.status)" x-text="statusLabel(p.status)"></span>
+                                </div>
+                                <p class="text-xs text-slate-400 mt-0.5" x-text="formatDate(p.created_at)"></p>
+                                <p class="text-xs text-slate-300 mt-1 font-mono" x-show="p.status === 'published'"
+                                   x-text="`👍 ${p.metrics?.reactions ?? '—'} · 💬 ${p.metrics?.comments ?? '—'} · ↗ ${p.metrics?.shares ?? '—'} · 👁 ${p.metrics ? p.metrics.reach.toLocaleString('id-ID') : '—'}`"></p>
+                                <div class="flex flex-wrap gap-1.5 mt-2">
+                                    <button @click="openInStudio(p)" class="px-2 py-1 rounded text-xs bg-slate-800 text-slate-200 border border-darkborder">
+                                        Buka di Studio
+                                    </button>
+                                    <template x-if="p.fb_post_url">
+                                        <a :href="p.fb_post_url" target="_blank" rel="noopener"
+                                           class="px-2 py-1 rounded text-xs bg-blue-600/20 text-blue-300 border border-blue-500/30">Facebook</a>
+                                    </template>
+                                    <template x-if="p.status !== 'published'">
+                                        <button @click="askPublish(p)" class="px-2 py-1 rounded text-xs bg-gold-500/20 text-gold-300 border border-gold-500/30">
+                                            Publish
+                                        </button>
+                                    </template>
+                                    <template x-if="p.status !== 'published'">
+                                        <button @click="askDelete(p)" class="px-2 py-1 rounded text-xs bg-rose-500/10 text-rose-300 border border-rose-500/30">
+                                            Hapus
+                                        </button>
+                                    </template>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                    <p x-show="postsList.length === 0" class="p-6 text-center text-slate-400 text-xs">Belum ada riwayat postingan.</p>
+                    <div x-show="postsHasMore" x-cloak class="flex justify-center pt-2">
+                        <button @click="loadMorePosts()" :disabled="isLoadingMore"
+                                class="px-4 py-2 rounded-lg text-xs font-semibold border border-darkborder bg-slate-900 hover:bg-slate-800 text-slate-200 transition flex items-center gap-2 disabled:opacity-50">
+                            <i :class="isLoadingMore ? 'fa-solid fa-circle-notch fa-spin' : 'fa-solid fa-chevron-down'"></i>
+                            <span x-text="`Muat lebih banyak (${postsList.length} dari ${postsTotal})`"></span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+
+        <!-- ======================================================== -->
+        <!-- TAB: COMMENT AUTO-REPLY                                  -->
+        <!-- ======================================================== -->
+        <div x-show="activeTab === 'replies'" x-cloak class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+          <!-- Comment list -->
+          <div class="lg:col-span-8 min-w-0 space-y-4">
+            <div class="bg-darkcard border border-darkborder rounded-xl p-5 sm:p-6 shadow-lg space-y-4">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div class="min-w-0">
+                        <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                            <i class="fa-regular fa-comments text-gold-400"></i> Balas Komentar
+                        </h2>
+                        <p class="text-xs text-slate-300 mt-1">
+                            Komentar pengikut di <strong class="text-slate-100">semua postingan</strong> Fanspage — dari aplikasi
+                            maupun yang diposting manual — dibalas singkat dan natural, maksimal 2 kalimat.
+                        </p>
+                    </div>
+                    <button @click="askScanReplies()" :disabled="isScanningReplies || !activePage"
+                            class="shrink-0 px-4 py-2 rounded-lg bg-gold-500 hover:bg-gold-400 text-slate-950 text-xs font-bold transition flex items-center justify-center gap-2 disabled:opacity-50">
+                        <i :class="isScanningReplies ? 'fa-solid fa-circle-notch fa-spin' : 'fa-solid fa-rotate'"></i>
+                        <span x-text="isScanningReplies ? 'Memeriksa komentar…' : (activePage?.auto_reply_mode === 'review' ? 'Periksa & Buat Draft' : 'Periksa & Balas Sekarang')"></span>
+                    </button>
+                </div>
+
+                <div class="flex flex-wrap gap-2" role="group" aria-label="Filter status komentar">
+                    <template x-for="f in replyFilters" :key="f.value">
+                        <button @click="replyStatus = f.value; fetchReplies()"
+                                :aria-pressed="replyStatus === f.value"
+                                :class="replyStatus === f.value ? 'bg-gold-500/15 border-gold-500/50 text-gold-300' : 'border-darkborder text-slate-300 hover:text-white'"
+                                class="px-3 py-1.5 rounded-full border text-xs transition">
+                            <span x-text="f.label"></span>
+                            <span x-show="f.value && replies.counts?.[f.value]" class="ml-1 font-mono"
+                                  x-text="replies.counts?.[f.value]"></span>
+                        </button>
+                    </template>
+                </div>
+            </div>
+
+            <p x-show="dataErrors.replies" x-cloak class="text-xs text-rose-300" x-text="dataErrors.replies"></p>
+
+            <template x-if="!isLoadingReplies && replies.items.length === 0">
+                <div class="bg-darkcard border border-dashed border-darkborder rounded-xl p-8 text-center space-y-2">
+                    <i class="fa-regular fa-comment-dots text-3xl text-slate-500"></i>
+                    <p class="text-sm text-slate-300"
+                       x-text="replyStatus ? 'Tidak ada komentar dengan status ini.' : 'Belum ada komentar yang ditangani untuk Fanspage ini.'"></p>
+                    <p class="text-xs text-slate-400" x-show="!replyStatus">
+                        Nyalakan di panel <strong class="text-slate-300">Balasan Otomatis</strong>, atau tekan tombol periksa untuk mencoba sekarang.
+                    </p>
+                </div>
+            </template>
+
+            <template x-for="item in replies.items" :key="item.id">
+                <article class="bg-darkcard border border-darkborder rounded-xl p-4 sm:p-5 shadow space-y-3">
+                    <header class="flex flex-wrap items-center justify-between gap-2">
+                        <div class="flex items-center gap-2 min-w-0">
+                            <span class="w-8 h-8 rounded-full bg-slate-800 border border-darkborder flex items-center justify-center text-xs font-bold text-slate-200 shrink-0"
+                                  x-text="(item.commenter_name || '?').charAt(0).toUpperCase()"></span>
+                            <div class="min-w-0">
+                                <p class="text-sm font-semibold text-slate-100 truncate" x-text="item.commenter_name"></p>
+                                <p class="text-xs text-slate-400" x-text="formatDate(item.comment_created_at || item.created_at)"></p>
+                            </div>
+                        </div>
+                        <span class="text-xs px-2 py-0.5 rounded-full border" :class="replyBadgeClass(item.status)"
+                              x-text="replyStatusLabel(item.status)"></span>
+                    </header>
+
+                    <p class="text-sm text-slate-200 whitespace-pre-line break-words" x-text="item.comment_message"></p>
+
+                    <p class="text-xs text-slate-400 truncate">
+                        <i class="fa-regular fa-newspaper mr-1"></i>
+                        <template x-if="item.post_url">
+                            <a :href="item.post_url" target="_blank" rel="noopener" class="hover:text-gold-300 underline decoration-dotted"
+                               x-text="item.post_message ? `Di postingan: ${item.post_message}` : 'Lihat postingan'"></a>
+                        </template>
+                        <template x-if="!item.post_url">
+                            <span x-text="item.post_message ? `Di postingan: ${item.post_message}` : 'Postingan tanpa teks'"></span>
+                        </template>
+                    </p>
+
+                    <!-- Sent reply -->
+                    <template x-if="item.status === 'replied' || item.status === 'replying'">
+                        <div class="ml-4 pl-3 border-l-2 border-emerald-500/40">
+                            <p class="text-xs text-slate-400 mb-0.5">
+                                <i class="fa-solid fa-reply mr-1"></i>
+                                <span x-text="activePage?.name || 'Fanspage'"></span>
+                                <span x-show="item.replied_at" x-text="` · ${formatDate(item.replied_at)}`"></span>
+                            </p>
+                            <p class="text-sm text-slate-100 break-words" x-text="item.reply_message"></p>
+                        </div>
+                    </template>
+
+                    <!-- Why it was skipped / failed -->
+                    <p x-show="item.note && item.status !== 'replied'" x-cloak
+                       class="text-xs rounded-lg px-3 py-2 border"
+                       :class="item.status === 'failed' ? 'border-rose-500/30 bg-rose-500/5 text-rose-200' : 'border-darkborder bg-slate-900/50 text-slate-300'">
+                        <i :class="item.status === 'failed' ? 'fa-solid fa-triangle-exclamation mr-1' : 'fa-solid fa-circle-info mr-1'"></i>
+                        <span x-text="item.note"></span>
+                    </p>
+
+                    <!-- Editable draft -->
+                    <template x-if="['pending', 'failed', 'skipped', 'dismissed'].includes(item.status)">
+                        <div class="space-y-2">
+                            <label :for="`reply-${item.id}`" class="sr-only">Balasan</label>
+                            <textarea :id="`reply-${item.id}`" x-model="item.draft" rows="2" maxlength="1000"
+                                      :placeholder="item.status === 'pending' ? '' : 'Tulis balasan sendiri, atau tekan Buat Ulang untuk draft dari AI…'"
+                                      class="w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-gold-500/60"></textarea>
+                            <div class="flex flex-wrap gap-2">
+                                <button @click="replyAction(item, 'send')" :disabled="item.busy || !(item.draft || '').trim()"
+                                        class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition disabled:opacity-50 flex items-center gap-1.5">
+                                    <i :class="item.busy ? 'fa-solid fa-circle-notch fa-spin' : 'fa-solid fa-paper-plane'"></i> Kirim Balasan
+                                </button>
+                                <button @click="replyAction(item, 'regenerate')" :disabled="item.busy"
+                                        class="px-3 py-1.5 rounded-lg border border-darkborder bg-slate-900 hover:bg-slate-800 text-slate-100 text-xs font-semibold transition disabled:opacity-50 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-wand-magic-sparkles"></i> Buat Ulang
+                                </button>
+                                <button x-show="item.status !== 'dismissed'" @click="replyAction(item, 'dismiss')" :disabled="item.busy"
+                                        class="px-3 py-1.5 rounded-lg border border-darkborder text-slate-300 hover:text-white text-xs transition disabled:opacity-50">
+                                    Abaikan
+                                </button>
+                            </div>
+                        </div>
+                    </template>
+                </article>
+            </template>
+
+            <button x-show="replies.has_more" x-cloak @click="fetchReplies(true)" :disabled="isLoadingReplies"
+                    class="w-full py-2 rounded-lg border border-darkborder text-xs text-slate-300 hover:text-white disabled:opacity-50">
+                Muat lebih banyak
+            </button>
+          </div>
+
+          <!-- Side column: per-page reply settings -->
+          <aside class="lg:col-span-4 space-y-4 lg:sticky lg:top-20">
+            <div class="bg-darkcard border border-darkborder rounded-xl p-5 sm:p-6 shadow-lg space-y-4">
+                <h3 class="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                    <i class="fa-solid fa-robot text-gold-400"></i> Balasan Otomatis
+                </h3>
+                <p class="text-xs text-slate-400" x-text="activePage ? `Untuk Fanspage: ${activePage.name}` : 'Belum ada Fanspage.'"></p>
+
+                <label class="flex items-center justify-between gap-3 cursor-pointer">
+                    <span class="text-sm text-slate-100">Balas komentar otomatis</span>
+                    <input type="checkbox" x-model="replyForm.auto_reply_enabled" :disabled="!activePage"
+                           class="w-5 h-5 accent-amber-500">
+                </label>
+
+                <fieldset class="space-y-2">
+                    <legend class="text-xs font-medium text-slate-200 mb-1">Mode</legend>
+                    <label class="flex items-start gap-2 text-xs text-slate-300 cursor-pointer">
+                        <input type="radio" value="auto" x-model="replyForm.auto_reply_mode" class="mt-0.5 accent-amber-500">
+                        <span><strong class="text-slate-100">Otomatis</strong> — balasan langsung terkirim ke Facebook.</span>
+                    </label>
+                    <label class="flex items-start gap-2 text-xs text-slate-300 cursor-pointer">
+                        <input type="radio" value="review" x-model="replyForm.auto_reply_mode" class="mt-0.5 accent-amber-500">
+                        <span><strong class="text-slate-100">Perlu persetujuan</strong> — AI menyiapkan draft, Anda yang mengirim.</span>
+                    </label>
+                </fieldset>
+
+                <div>
+                    <label for="reply-max" class="block text-xs font-medium text-slate-200 mb-1">Maksimal balasan per jam</label>
+                    <input id="reply-max" type="number" min="1" max="60" x-model="replyForm.reply_max_per_hour"
+                           class="w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-gold-500/60">
+                    <p class="text-xs text-slate-400 mt-1">Membalas terlalu cepat bisa membuat Facebook menandai halaman sebagai spam.</p>
+                </div>
+
+                <button @click="saveReplySettings()" :disabled="!activePage || !replyFormDirty || isSavingReplySettings"
+                        class="w-full py-2 rounded-lg bg-gold-500 hover:bg-gold-400 text-slate-950 text-xs font-bold transition disabled:opacity-40 flex items-center justify-center gap-2">
+                    <i :class="isSavingReplySettings ? 'fa-solid fa-circle-notch fa-spin' : 'fa-solid fa-floppy-disk'"></i>
+                    Simpan Pengaturan Balasan
+                </button>
+
+                <div class="pt-3 border-t border-darkborder space-y-1.5 text-xs">
+                    <p class="text-slate-300" x-text="replyStatusText"></p>
+                    <p class="text-slate-400" x-show="activePage?.reply_last_run"
+                       x-text="`Terakhir diperiksa: ${formatDate(activePage?.reply_last_run)}`"></p>
+                    <p x-show="activePage?.reply_last_error" x-cloak
+                       class="text-rose-200 bg-rose-500/5 border border-rose-500/30 rounded-lg px-3 py-2 break-words">
+                        <i class="fa-solid fa-triangle-exclamation mr-1"></i>
+                        <span x-text="activePage?.reply_last_error"></span>
+                    </p>
+                </div>
+            </div>
+
+            <div class="text-xs text-slate-400 bg-slate-900/50 border border-darkborder rounded-xl p-4 space-y-2">
+                <p class="font-semibold text-slate-200"><i class="fa-solid fa-key mr-1 text-gold-400"></i> Izin token yang dibutuhkan</p>
+                <p>Page Access Token harus punya izin <code class="text-slate-200">pages_read_engagement</code>,
+                   <code class="text-slate-200">pages_read_user_content</code>, dan
+                   <code class="text-slate-200">pages_manage_engagement</code>. Bila belum, buat ulang token di Meta Developer
+                   lalu ganti di tab Fanspage.</p>
+                <p>Yang tidak dibalas: komentar Fanspage sendiri, yang sudah dibalas admin, stiker/foto tanpa teks,
+                   komentar bertautan atau spam, dan komentar yang lebih lama dari 48 jam.</p>
+            </div>
+          </aside>
+        </div>
+
+        <!-- ======================================================== -->
+        <!-- TAB 3: FANSPAGE MANAGEMENT                               -->
+        <!-- ======================================================== -->
+        <div x-show="activeTab === 'pages'" x-cloak class="space-y-6">
+
+            <!-- Header + add button -->
+            <div class="bg-darkcard border border-darkborder rounded-xl p-5 sm:p-6 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div class="min-w-0">
+                    <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                        <i class="fa-brands fa-facebook text-blue-500"></i> Manajemen Fanspage
+                    </h2>
+                    <p class="text-xs text-slate-300 mt-1">
+                        Tiap Fanspage punya token, jadwal, preferensi konten, dan
+                        <strong class="text-slate-100">pembelajaran topiknya sendiri</strong> —
+                        konten tidak dikembarkan antar halaman.
+                    </p>
+                </div>
+                <button @click="openAddPage()"
+                        class="shrink-0 px-4 py-2.5 rounded-lg font-bold text-sm bg-gradient-to-r from-gold-500 to-gold-600 hover:from-gold-400 hover:to-gold-500 text-slate-950 transition flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-plus"></i> Tambah Fanspage
+                </button>
+            </div>
+
+            <!-- Empty state -->
+            <template x-if="pages.length === 0">
+                <div class="bg-darkcard border border-darkborder rounded-xl p-8 sm:p-12 text-center max-w-xl mx-auto space-y-4">
+                    <div class="w-16 h-16 rounded-2xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center mx-auto text-blue-400 text-2xl">
+                        <i class="fa-brands fa-facebook"></i>
+                    </div>
+                    <h3 class="text-lg font-bold text-white">Belum Ada Fanspage Terdaftar</h3>
+                    <p class="text-sm text-slate-300">
+                        Tambahkan Fanspage pertama Anda dengan <strong>Page ID</strong> dan
+                        <strong>Page Access Token</strong>. Sistem akan memverifikasi ke Facebook
+                        dan menampilkan nama serta foto halamannya.
+                    </p>
+                    <button @click="openAddPage()"
+                            class="text-xs font-semibold px-4 py-2 rounded-lg border border-gold-500/40 bg-gold-500/10 text-gold-400 hover:bg-gold-500/20 transition">
+                        <i class="fa-solid fa-plus mr-1.5"></i> Tambah Fanspage Pertama
+                    </button>
+                </div>
+            </template>
+
+            <!-- Page cards -->
+            <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                <template x-for="p in pages" :key="p.id">
+                    <div class="bg-darkcard border rounded-xl shadow-lg overflow-hidden"
+                         :class="p.is_active ? 'border-darkborder' : 'border-darkborder opacity-60'">
+
+                        <!-- Card header -->
+                        <div class="p-5 border-b border-darkborder flex items-start gap-3">
+                            <template x-if="p.picture_url">
+                                <img :src="p.picture_url" alt="" class="w-12 h-12 rounded-full object-cover shrink-0 border border-darkborder">
+                            </template>
+                            <template x-if="!p.picture_url">
+                                <div class="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center shrink-0 text-slate-400">
+                                    <i class="fa-brands fa-facebook text-xl"></i>
+                                </div>
+                            </template>
+
+                            <div class="min-w-0 flex-1">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <h3 class="text-sm font-bold text-white truncate" x-text="p.name"></h3>
+                                    <span class="text-xs font-bold px-2 py-0.5 rounded border shrink-0"
+                                          :class="p.token_status === 'Terverifikasi' ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30' : 'bg-amber-500/10 text-amber-300 border-amber-500/30'"
+                                          x-text="p.token_status"></span>
+                                    <template x-if="!p.is_active">
+                                        <span class="text-xs font-bold px-2 py-0.5 rounded bg-slate-700 text-slate-300 shrink-0">DIJEDA</span>
+                                    </template>
+                                </div>
+                                <p class="text-xs text-slate-400 font-mono truncate" x-text="`ID: ${p.page_id}`"></p>
+                                <p class="text-xs text-slate-400 mt-0.5">
+                                    <span x-text="`${p.published_count} tayang`"></span>
+                                    <template x-if="p.failed_count > 0">
+                                        <span class="text-rose-300" x-text="` · ${p.failed_count} gagal`"></span>
+                                    </template>
+                                    <template x-if="p.fan_count > 0">
+                                        <span x-text="` · ${p.fan_count.toLocaleString('id-ID')} pengikut`"></span>
+                                    </template>
+                                </p>
+                            </div>
+
+                            <button @click="askDeletePage(p)" aria-label="Hapus Fanspage"
+                                    class="shrink-0 text-slate-400 hover:text-rose-300 transition p-1" title="Hapus Fanspage">
+                                <i class="fa-regular fa-trash-can"></i>
+                            </button>
+                        </div>
+
+                        <!-- Card body: per-page settings -->
+                        <div class="p-5 space-y-4">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label :for="`lang-${p.id}`" class="block text-xs font-medium text-slate-300 mb-1">Bahasa Konten</label>
+                                    <select :id="`lang-${p.id}`" x-model="p.content_language" @change="p.dirty = true"
+                                            class="w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:ring-2 focus:ring-gold-500/60">
+                                        <option value="id">Bahasa Indonesia</option>
+                                        <option value="en">English (Amerika)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label :for="`ratio-${p.id}`" class="block text-xs font-medium text-slate-300 mb-1">Rasio Poster</label>
+                                    <select :id="`ratio-${p.id}`" x-model="p.aspect_ratio" @change="p.dirty = true"
+                                            class="w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:ring-2 focus:ring-gold-500/60">
+                                        <option value="3:4">3:4 Portrait</option>
+                                        <option value="1:1">1:1 Square</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label :for="`times-${p.id}`" class="block text-xs font-medium text-slate-300 mb-1">
+                                    Jam Posting Otomatis
+                                    <span class="text-slate-400 font-normal" x-text="`(${schedule.timezone || 'server'})`"></span>
+                                </label>
+                                <div class="flex gap-2">
+                                    <input :id="`times-${p.id}`" type="text" x-model="p.auto_post_times" @input="p.dirty = true"
+                                           placeholder="10:00,19:00"
+                                           class="flex-1 min-w-0 bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-xs font-mono text-slate-100 focus:outline-none focus:ring-2 focus:ring-gold-500/60">
+                                    <button @click="savePage(p)" :disabled="savingPageId !== null"
+                                            class="shrink-0 px-3 py-2 rounded-lg text-xs font-semibold border border-darkborder bg-slate-900 hover:bg-slate-800 text-slate-100 transition">
+                                        <span x-text="savingPageId === p.id ? 'Menyimpan…' : 'Simpan Preferensi'"></span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <p role="status" class="text-xs text-amber-300" x-show="p.dirty">Perubahan belum diterapkan. Klik Simpan Preferensi.</p>
+                            <!-- Autopilot per page -->
+                            <div class="flex items-center justify-between gap-3 p-3 rounded-lg border border-darkborder bg-slate-900/60">
+                                <div class="min-w-0">
+                                    <p class="text-xs font-bold text-white flex items-center gap-2">
+                                        <i class="fa-solid fa-robot text-gold-400"></i> Autopilot halaman ini
+                                    </p>
+                                    <p class="text-xs mt-0.5"
+                                       :class="!p.autopilot_enabled ? 'text-slate-400' : (p.has_token ? 'text-emerald-300' : 'text-amber-300')"
+                                       x-text="autopilotStatus(p)"></p>
+                                </div>
+                                <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                                    <input type="checkbox" class="sr-only peer" :aria-label="`Autopilot untuk ${p.name}`"
+                                           :checked="p.autopilot_enabled"
+                                           @change="p.autopilot_enabled = $event.target.checked; p.dirty = true">
+                                    <div class="w-11 h-6 bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-gold-500/60 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-gold-500"></div>
+                                </label>
+                            </div>
+
+                            <!-- Actions -->
+                            <div class="flex flex-wrap gap-2">
+                                <button @click="reverifyPage(p)" :disabled="verifyingPageId === p.id"
+                                        class="px-3 py-2 rounded-lg text-xs font-semibold border border-darkborder bg-slate-900 hover:bg-slate-800 text-slate-100 transition flex items-center gap-1.5 disabled:opacity-50">
+                                    <i :class="verifyingPageId === p.id ? 'fa-solid fa-circle-notch fa-spin' : 'fa-solid fa-link'"></i>
+                                    Verifikasi Ulang
+                                </button>
+                                <button @click="p.is_active = !p.is_active; p.dirty = true"
+                                        class="px-3 py-2 rounded-lg text-xs font-semibold border border-darkborder bg-slate-900 hover:bg-slate-800 text-slate-100 transition flex items-center gap-1.5">
+                                    <i :class="p.is_active ? 'fa-solid fa-pause' : 'fa-solid fa-play'"></i>
+                                    <span x-text="p.is_active ? 'Jeda Halaman' : 'Aktifkan'"></span>
+                                </button>
+                                <button @click="activePageId = p.id; onPageSwitch(); switchTab('generator')"
+                                        class="px-3 py-2 rounded-lg text-xs font-semibold border border-gold-500/30 bg-gold-500/10 text-gold-300 hover:bg-gold-500/20 transition flex items-center gap-1.5">
+                                    <i class="fa-solid fa-wand-magic-sparkles"></i> Buat Konten
+                                </button>
+                                <template x-if="p.link">
+                                    <a :href="p.link" target="_blank" rel="noopener"
+                                       class="px-3 py-2 rounded-lg text-xs font-semibold border border-blue-500/30 bg-blue-600/10 text-blue-300 hover:bg-blue-600/20 transition flex items-center gap-1.5">
+                                        <i class="fa-solid fa-arrow-up-right-from-square"></i> Buka
+                                    </a>
+                                </template>
+                            </div>
+
+                            <!-- Token replacement -->
+                            <details class="text-xs">
+                                <summary class="cursor-pointer text-slate-400 hover:text-slate-200 transition">Ganti Access Token</summary>
+                                <div class="flex gap-2 mt-2">
+                                    <input type="password" x-model="p.newToken" placeholder="Tempel token baru (EAA...)"
+                                           class="flex-1 min-w-0 bg-slate-900 border border-darkborder rounded-lg px-3 py-2 font-mono text-slate-100 focus:outline-none focus:ring-2 focus:ring-gold-500/60">
+                                    <button @click="replaceToken(p)"
+                                            class="shrink-0 px-3 py-2 rounded-lg font-semibold border border-darkborder bg-slate-900 hover:bg-slate-800 text-slate-100 transition">
+                                        Simpan Token
+                                    </button>
+                                </div>
+                            </details>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- ======================================================== -->
+        <!-- TAB 4: SETTINGS & CREDENTIALS                            -->
+        <!-- ======================================================== -->
+        <div x-show="activeTab === 'settings'" x-cloak class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          <!-- Form column: same 12-column grid as the other tabs so page width stays identical -->
+          <div class="lg:col-span-8 min-w-0">
+            <div class="bg-darkcard border border-darkborder rounded-xl p-5 sm:p-6 shadow-lg space-y-6">
+                <div class="border-b border-darkborder pb-4">
+                    <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                        <i class="fa-solid fa-sliders text-gold-400"></i> Pengaturan &amp; Kredensial API
+                    </h2>
+                    <p class="text-xs text-slate-300 mt-1">
+                        Kredensial disimpan di database lokal dan tidak pernah dikirim balik ke browser dalam bentuk asli
+                        — field yang sudah terisi ditampilkan sebagai titik-titik.
+                    </p>
+                </div>
+
+                <!-- 1. AI engines: which provider writes and which one draws -->
+                <div class="space-y-4">
+                    <h3 class="text-xs font-bold text-gold-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> 1. Mesin AI
+                    </h3>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label for="text-provider" class="block text-xs font-medium text-slate-200 mb-1">Penyedia Naskah &amp; Caption</label>
+                            <select id="text-provider" x-model="settings.text_provider" @change="settingsDirty = true"
+                                    class="w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/60 text-slate-200">
+                                <option value="gemini">Google Gemini</option>
+                                <option value="openai">OpenAI</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="image-provider" class="block text-xs font-medium text-slate-200 mb-1">Penyedia Gambar Poster</label>
+                            <select id="image-provider" x-model="settings.image_provider" @change="settingsDirty = true"
+                                    class="w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/60 text-slate-200">
+                                <option value="gemini">Google Gemini</option>
+                                <option value="openai">OpenAI</option>
+                            </select>
+                        </div>
+                    </div>
+                    <p class="text-xs text-slate-400 -mt-1">
+                        Hanya kunci penyedia yang dipilih yang wajib diisi. Pilihan ini dipakai oleh generate manual,
+                        render ulang, autopilot, dan evolusi topik.
+                    </p>
+                </div>
+
+                <!-- 1a. Gemini -->
+                <div class="space-y-4 p-4 rounded-lg border border-darkborder bg-slate-900/40"
+                     :class="usedProviders.includes('gemini') ? '' : 'opacity-60'">
+                    <h4 class="text-xs font-bold text-slate-100 uppercase tracking-wider flex items-center justify-between gap-2">
+                        <span>Google Gemini API</span>
+                        <span x-show="!usedProviders.includes('gemini')" class="normal-case font-medium text-slate-400 tracking-normal">Tidak dipakai</span>
+                    </h4>
+
+                    <div>
+                        <label for="gemini-key" class="block text-xs font-medium text-slate-200 mb-1">Gemini API Key</label>
+                        <div class="relative">
+                            <input id="gemini-key" :type="showGeminiKey ? 'text' : 'password'"
+                                   x-model="settings.gemini_api_key" @input="settingsDirty = true"
+                                   @focus="clearMaskOnEdit('gemini_api_key')" @blur="restoreMaskIfEmpty('gemini_api_key')"
+                                   placeholder="AIzaSy..."
+                                   class="w-full bg-slate-900 border border-darkborder rounded-lg pl-3.5 pr-11 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/60 focus:border-gold-500 text-slate-200 font-mono">
+                            <button type="button" @click="showGeminiKey = !showGeminiKey"
+                                    :aria-label="showGeminiKey ? 'Sembunyikan API key' : 'Tampilkan API key'"
+                                    class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 hover:text-white">
+                                <i :class="showGeminiKey ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye'"></i>
+                            </button>
+                        </div>
+                        <p x-show="isSecretStored('gemini_api_key')" x-cloak class="text-xs text-emerald-300 mt-1">
+                            <i class="fa-solid fa-lock"></i> Kunci tersimpan di server (disembunyikan). Klik kolom untuk menggantinya.
+                        </p>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label for="text-model" class="block text-xs font-medium text-slate-200 mb-1">Model Naskah / Teks</label>
+                            <select id="text-model" x-model="settings.gemini_text_model" @change="settingsDirty = true"
+                                    class="w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/60 text-slate-200">
+                                <option value="gemini-3.8-flash">gemini-3.8-flash ⭐</option>
+                                <option value="gemini-3.1-pro">gemini-3.1-pro</option>
+                                <option value="gemini-3.5-flash">gemini-3.5-flash</option>
+                                <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="image-model" class="block text-xs font-medium text-slate-200 mb-1">Model Gambar / Poster</label>
+                            <select id="image-model" x-model="settings.gemini_image_model" @change="settingsDirty = true"
+                                    class="w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/60 text-slate-200">
+                                <option value="gemini-3.1-flash-image">gemini-3.1-flash-image ⭐</option>
+                                <option value="gemini-3-pro-image">gemini-3-pro-image</option>
+                                <option value="imagen-3.0-generate-002">imagen-3.0-generate-002</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <button @click="testGeminiConnection()" :disabled="isTestingGemini"
+                            class="px-4 py-2 rounded-lg border border-darkborder bg-slate-900 hover:bg-slate-800 text-xs font-semibold text-slate-100 transition flex items-center gap-2 disabled:opacity-50">
+                        <i :class="isTestingGemini ? 'fa-solid fa-circle-notch fa-spin' : 'fa-solid fa-plug'"></i>
+                        Uji Koneksi Gemini API
+                    </button>
+                </div>
+
+                <!-- 1b. OpenAI -->
+                <div class="space-y-4 p-4 rounded-lg border border-darkborder bg-slate-900/40"
+                     :class="usedProviders.includes('openai') ? '' : 'opacity-60'">
+                    <h4 class="text-xs font-bold text-slate-100 uppercase tracking-wider flex items-center justify-between gap-2">
+                        <span>OpenAI API</span>
+                        <span x-show="!usedProviders.includes('openai')" class="normal-case font-medium text-slate-400 tracking-normal">Tidak dipakai</span>
+                    </h4>
+
+                    <div>
+                        <label for="openai-key" class="block text-xs font-medium text-slate-200 mb-1">OpenAI API Key</label>
+                        <div class="relative">
+                            <input id="openai-key" :type="showOpenaiKey ? 'text' : 'password'"
+                                   x-model="settings.openai_api_key" @input="settingsDirty = true"
+                                   @focus="clearMaskOnEdit('openai_api_key')" @blur="restoreMaskIfEmpty('openai_api_key')"
+                                   placeholder="sk-..." autocomplete="off"
+                                   class="w-full bg-slate-900 border border-darkborder rounded-lg pl-3.5 pr-11 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/60 focus:border-gold-500 text-slate-200 font-mono">
+                            <button type="button" @click="showOpenaiKey = !showOpenaiKey"
+                                    :aria-label="showOpenaiKey ? 'Sembunyikan API key' : 'Tampilkan API key'"
+                                    class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 hover:text-white">
+                                <i :class="showOpenaiKey ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye'"></i>
+                            </button>
+                        </div>
+                        <p x-show="isSecretStored('openai_api_key')" x-cloak class="text-xs text-emerald-300 mt-1">
+                            <i class="fa-solid fa-lock"></i> Kunci tersimpan di server (disembunyikan). Klik kolom untuk menggantinya.
+                        </p>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label for="openai-text-model" class="block text-xs font-medium text-slate-200 mb-1">Model Naskah / Teks</label>
+                            <input id="openai-text-model" list="openai-text-models" x-model.trim="settings.openai_text_model"
+                                   @input="settingsDirty = true" autocomplete="off"
+                                   class="w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/60 text-slate-200 font-mono">
+                            <datalist id="openai-text-models">
+                                <option value="gpt-5-mini"></option>
+                                <option value="gpt-5"></option>
+                                <option value="gpt-4.1-mini"></option>
+                                <option value="gpt-4o-mini"></option>
+                            </datalist>
+                        </div>
+                        <div>
+                            <label for="openai-image-model" class="block text-xs font-medium text-slate-200 mb-1">Model Gambar / Poster</label>
+                            <input id="openai-image-model" list="openai-image-models" x-model.trim="settings.openai_image_model"
+                                   @input="settingsDirty = true" autocomplete="off"
+                                   class="w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/60 text-slate-200 font-mono">
+                            <datalist id="openai-image-models">
+                                <option value="gpt-image-1"></option>
+                                <option value="gpt-image-1-mini"></option>
+                                <option value="dall-e-3"></option>
+                            </datalist>
+                        </div>
+                    </div>
+                    <p class="text-xs text-slate-400">
+                        Boleh mengetik nama model lain bila akun Anda punya akses ke model yang lebih baru. Poster OpenAI
+                        dibuat di kanvas potret 2:3, persegi, atau lanskap — yang paling dekat dengan rasio Fanspage.
+                    </p>
+
+                    <button @click="testOpenaiConnection()" :disabled="isTestingOpenai"
+                            class="px-4 py-2 rounded-lg border border-darkborder bg-slate-900 hover:bg-slate-800 text-xs font-semibold text-slate-100 transition flex items-center gap-2 disabled:opacity-50">
+                        <i :class="isTestingOpenai ? 'fa-solid fa-circle-notch fa-spin' : 'fa-solid fa-plug'"></i>
+                        Uji Koneksi OpenAI API
+                    </button>
+                </div>
+
+                <hr class="border-darkborder">
+
+                <!-- 2. Fanspage -> managed on their own page -->
+                <div class="space-y-3">
+                    <h3 class="text-xs font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <i class="fa-brands fa-facebook"></i> 2. Fanspage Facebook
+                    </h3>
+                    <div class="p-4 rounded-lg border border-darkborder bg-slate-900/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <p class="text-xs text-slate-300 min-w-0">
+                            Kredensial, jadwal, dan preferensi konten kini diatur
+                            <strong class="text-slate-100">per Fanspage</strong> di halaman tersendiri.
+                            <span class="block text-xs text-slate-400 mt-0.5"
+                                  x-text="pages.length ? `${pages.length} Fanspage terdaftar.` : 'Belum ada Fanspage terdaftar.'"></span>
+                        </p>
+                        <button @click="switchTab('pages')"
+                                class="shrink-0 px-4 py-2 rounded-lg text-xs font-semibold border border-blue-500/30 bg-blue-600/10 text-blue-300 hover:bg-blue-600/20 transition flex items-center justify-center gap-2">
+                            <i class="fa-brands fa-facebook"></i> Buka Manajemen Fanspage
+                        </button>
+                    </div>
+                </div>
+
+                <hr class="border-darkborder">
+
+
+                <!-- 3. Learning preferences (global; per-page settings live in the Fanspage tab) -->
+                <div class="space-y-4">
+                    <h3 class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <i class="fa-solid fa-brain"></i> 3. Pembelajaran &amp; Evolusi Topik
+                    </h3>
+
+                    <p class="text-xs text-slate-400">
+                        Bahasa konten, rasio poster, jam posting, dan sakelar autopilot diatur
+                        <strong class="text-slate-300">per Fanspage</strong> di tab Fanspage.
+                        Pengaturan di bawah berlaku untuk seluruh halaman.
+                    </p>
+
+                    <div class="p-4 rounded-xl border border-darkborder bg-slate-900/60 space-y-4">
+                        <!-- Topic evolution controls -->
+                        <div class="pt-3 border-t border-darkborder space-y-3">
+                            <div class="flex items-start justify-between gap-4">
+                                <div class="min-w-0">
+                                    <h4 class="text-xs font-bold text-white flex items-center gap-2">
+                                        <i class="fa-solid fa-dna text-gold-400"></i> Evolusi Topik Otomatis
+                                    </h4>
+                                    <p class="text-xs text-slate-300 mt-0.5">
+                                        Tiap Senin, AI membaca topik dengan jangkauan tertinggi dalam periode analisis
+                                        lalu merancang topik turunan baru secara mandiri.
+                                    </p>
+                                </div>
+                                <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                                    <input type="checkbox" class="sr-only peer" aria-label="Aktifkan evolusi topik otomatis"
+                                           :checked="settings.auto_topic_evolution === 'true'"
+                                           @change="settings.auto_topic_evolution = $event.target.checked ? 'true' : 'false'; settingsDirty = true">
+                                    <div class="w-11 h-6 bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-gold-500/60 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-gold-500"></div>
+                                </label>
+                            </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label for="window-days" class="block text-xs font-medium text-slate-200 mb-1">Periode Analisis</label>
+                                    <select id="window-days" x-model="settings.topic_window_days"
+                                            @change="settingsDirty = true; windowDays = parseInt(settings.topic_window_days); fetchWindowStats()"
+                                            class="w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/60 text-slate-200">
+                                        <option value="7">7 hari terakhir (rekomendasi)</option>
+                                        <option value="14">14 hari terakhir</option>
+                                        <option value="30">30 hari terakhir</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="max-new-topics" class="block text-xs font-medium text-slate-200 mb-1">Topik Baru per Siklus</label>
+                                    <select id="max-new-topics" x-model="settings.max_new_topics_per_cycle" @change="settingsDirty = true"
+                                            class="w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/60 text-slate-200">
+                                        <option value="1">1 topik</option>
+                                        <option value="2">2 topik</option>
+                                        <option value="3">3 topik</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="text-xs rounded-lg p-2.5 border flex items-start gap-2"
+                             :class="autopilotPagesCount ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-darkborder bg-slate-950/60 text-slate-400'">
+                            <i class="mt-0.5" :class="autopilotPagesCount ? 'fa-solid fa-circle-play' : 'fa-solid fa-circle-pause'"></i>
+                            <span x-show="autopilotPagesCount && schedule.next_run" x-cloak>
+                                Aktif — jadwal berikutnya <strong x-text="formatDate(schedule.next_run)"></strong>
+                                (jam: <span x-text="(schedule.times || []).join(', ')"></span>)
+                            </span>
+                            <span x-show="autopilotPagesCount && !schedule.next_run" x-cloak>Aktif — menunggu jadwal berikutnya.</span>
+                            <span x-show="!autopilotPagesCount">Belum ada Fanspage dengan autopilot aktif. Nyalakan di tab Fanspage.</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Save -->
+                <div class="pt-2 sticky bottom-0 bg-darkcard pb-1">
+                    <button @click="saveSettings()" :disabled="isSaving"
+                            class="w-full py-3 rounded-lg font-bold text-sm bg-gold-500 hover:bg-gold-400 text-slate-950 transition shadow-lg shadow-gold-500/20 flex items-center justify-center gap-2 disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-gold-400">
+                        <i :class="isSaving ? 'fa-solid fa-circle-notch fa-spin' : 'fa-solid fa-floppy-disk'"></i>
+                        <span x-text="settingsDirty ? 'Simpan Perubahan' : 'Simpan Seluruh Pengaturan'"></span>
+                    </button>
+                    <p x-show="settingsDirty" x-cloak class="text-xs text-rose-300 text-center mt-1.5">
+                        <i class="fa-solid fa-circle-exclamation mr-1"></i> Ada perubahan yang belum disimpan.
+                    </p>
+                </div>
+            </div>
+          </div>
+
+          <!-- Side column: fills the remaining width instead of leaving the page narrower -->
+          <aside class="lg:col-span-4 space-y-4 lg:sticky lg:top-20">
+            <div class="bg-darkcard border border-darkborder rounded-xl p-5 sm:p-6 shadow-lg space-y-3">
+                <h3 class="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                    <i class="fa-solid fa-signal text-gold-400"></i> Status Koneksi
+                </h3>
+                <template x-for="p in usedProviders" :key="p">
+                    <div class="flex items-center justify-between text-xs">
+                        <span class="text-slate-300" x-text="`${providerLabel(p)} API`"></span>
+                        <span class="flex items-center gap-1.5 font-medium"
+                              :class="settings[`${p}_api_key`] ? 'text-emerald-300' : 'text-rose-300'">
+                            <span class="w-2 h-2 rounded-full" :class="providerState(p) === 'Terhubung' ? 'bg-emerald-400' : 'bg-rose-400'"></span>
+                            <span x-text="settingsDirty ? 'Belum disimpan' : (settings[`${p}_api_key`] ? providerState(p) : 'Belum diisi')"></span>
+                        </span>
+                    </div>
+                </template>
+                <div class="flex items-center justify-between text-xs">
+                    <span class="text-slate-300">Fanspage</span>
+                    <span class="flex items-center gap-1.5 font-medium truncate max-w-[55%]"
+                          :class="pages.length ? 'text-blue-300' : 'text-rose-300'">
+                        <span class="w-2 h-2 rounded-full shrink-0" :class="pages.length ? 'bg-blue-400' : 'bg-rose-400'"></span>
+                        <span class="truncate" x-text="pages.length ? `${pages.length} halaman terdaftar` : 'Belum ada'"></span>
+                    </span>
+                </div>
+                <div class="flex items-center justify-between text-xs">
+                    <span class="text-slate-300">Autopilot</span>
+                    <span class="flex items-center gap-1.5 font-medium"
+                          :class="autopilotPagesCount ? 'text-emerald-300' : 'text-slate-400'">
+                        <span class="w-2 h-2 rounded-full" :class="autopilotPagesCount ? 'bg-emerald-400' : 'bg-slate-500'"></span>
+                        <span x-text="autopilotPagesCount ? `${autopilotPagesCount} halaman aktif` : 'Nonaktif'"></span>
+                    </span>
+                </div>
+            </div>
+
+            <div class="bg-darkcard border border-darkborder rounded-xl p-5 sm:p-6 shadow-lg">
+                <h3 class="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5 mb-3">
+                    <i class="fa-solid fa-list-check text-gold-400"></i> Urutan Pengaturan
+                </h3>
+                <ol class="text-xs text-slate-300 space-y-2 list-decimal list-inside leading-relaxed">
+                    <li>Pilih penyedia AI, isi API Key-nya, lalu klik <span class="text-slate-100 font-medium">Uji Koneksi</span>.</li>
+                    <li>Buka tab Fanspage, isi Page ID &amp; Token, klik <span class="text-slate-100 font-medium">Verifikasi Fanspage</span>.</li>
+                    <li>Atur bahasa, rasio, dan jadwal di tab Fanspage, lalu Simpan Preferensi.</li>
+                    <li>Klik <span class="text-slate-100 font-medium">Simpan Seluruh Pengaturan</span>.</li>
+                </ol>
+            </div>
+
+            <div class="bg-darkcard border border-darkborder rounded-xl p-5 sm:p-6 shadow-lg space-y-3">
+                <h3 class="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                    <i class="fa-solid fa-user-shield text-gold-400"></i> Akun Login
+                </h3>
+                <p class="text-xs text-slate-300 truncate" x-text="authEmail"></p>
+
+                <form @submit.prevent="changePassword()" class="space-y-2" autocomplete="on">
+                    <input type="email" :value="authEmail" autocomplete="username" class="hidden" readonly>
+                    <label for="pw-current" class="sr-only">Password saat ini</label>
+                    <input id="pw-current" type="password" x-model="passwordForm.current" autocomplete="current-password"
+                           placeholder="Password saat ini"
+                           class="w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-gold-500/60 text-slate-200">
+                    <label for="pw-new" class="sr-only">Password baru</label>
+                    <input id="pw-new" type="password" x-model="passwordForm.next" autocomplete="new-password"
+                           placeholder="Password baru (min. 8 karakter)"
+                           class="w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-gold-500/60 text-slate-200">
+                    <label for="pw-confirm" class="sr-only">Ulangi password baru</label>
+                    <input id="pw-confirm" type="password" x-model="passwordForm.confirm" autocomplete="new-password"
+                           placeholder="Ulangi password baru"
+                           class="w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-gold-500/60 text-slate-200">
+                    <button type="submit" :disabled="isChangingPassword || !passwordForm.current || !passwordForm.next"
+                            class="w-full py-2 rounded-lg text-xs font-semibold border border-gold-500/40 bg-gold-500/10 hover:bg-gold-500/20 text-gold-300 transition disabled:opacity-50">
+                        <span x-text="isChangingPassword ? 'Menyimpan…' : 'Ganti Password'"></span>
+                    </button>
+                </form>
+
+                <button @click="logout()"
+                        class="w-full py-2 rounded-lg text-xs font-semibold border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 transition flex items-center justify-center gap-1.5">
+                    <i class="fa-solid fa-right-from-bracket"></i> Keluar
+                </button>
+            </div>
+          </aside>
+        </div>
+    </main>
+
+    <!-- Confirmation Dialog -->
+    <div x-show="confirmDialog.show" x-cloak
+         class="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+         role="dialog" aria-modal="true" aria-labelledby="confirm-title"
+         @click.self="confirmDialog.show = false">
+        <div class="bg-darkcard border border-darkborder rounded-xl shadow-2xl max-w-md w-full p-5 space-y-4">
+            <h3 id="confirm-title" class="text-base font-bold text-white flex items-center gap-2">
+                <i :class="confirmDialog.tone === 'danger' ? 'fa-solid fa-triangle-exclamation text-rose-400' : 'fa-brands fa-facebook text-blue-400'"></i>
+                <span x-text="confirmDialog.title"></span>
+            </h3>
+            <p class="text-sm text-slate-300 leading-relaxed" x-text="confirmDialog.message"></p>
+            <template x-if="confirmDialog.preview">
+                <p class="text-xs text-slate-300 bg-slate-950 border border-darkborder rounded-lg p-3 max-h-28 overflow-y-auto whitespace-pre-wrap"
+                   x-text="confirmDialog.preview"></p>
+            </template>
+            <div class="flex gap-2.5 pt-1">
+                <button @click="confirmDialog.show = false"
+                        class="flex-1 py-2.5 rounded-lg text-sm font-semibold border border-darkborder bg-slate-900 hover:bg-slate-800 text-slate-200 transition">
+                    Batal
+                </button>
+                <button @click="runConfirmAction()"
+                        class="flex-1 py-2.5 rounded-lg text-sm font-bold text-white transition"
+                        :class="confirmDialog.tone === 'danger' ? 'bg-rose-600 hover:bg-rose-500' : 'bg-blue-600 hover:bg-blue-500'"
+                        x-text="confirmDialog.confirmLabel"></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Fanspage Dialog -->
+    <div x-show="addPage.show" x-cloak
+         class="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 overflow-y-auto"
+         role="dialog" aria-modal="true" aria-labelledby="addpage-title"
+         @click.self="addPage.show = false">
+        <div class="bg-darkcard border border-darkborder rounded-xl shadow-2xl max-w-lg w-full p-5 sm:p-6 space-y-4 my-8">
+            <h3 id="addpage-title" class="text-base font-bold text-white flex items-center gap-2">
+                <i class="fa-brands fa-facebook text-blue-500"></i> Tambah Fanspage
+            </h3>
+
+            <div>
+                <label for="new-page-id" class="block text-xs font-medium text-slate-200 mb-1">Facebook Page ID</label>
+                <input id="new-page-id" type="text" x-model="addPage.page_id" placeholder="Contoh: 108234981273891"
+                       class="w-full bg-slate-900 border border-darkborder rounded-lg px-3.5 py-2.5 text-sm font-mono text-slate-100 focus:outline-none focus:ring-2 focus:ring-gold-500/60">
+            </div>
+
+            <div>
+                <label for="new-page-token" class="block text-xs font-medium text-slate-200 mb-1">Page Access Token</label>
+                <input id="new-page-token" type="password" x-model="addPage.access_token" placeholder="EAA..."
+                       class="w-full bg-slate-900 border border-darkborder rounded-lg px-3.5 py-2.5 text-sm font-mono text-slate-100 focus:outline-none focus:ring-2 focus:ring-gold-500/60">
+                <p class="text-xs text-slate-400 mt-1">
+                    Bisa Page Access Token, atau User Token pengelola halaman — sistem akan mengambil
+                    Page Token permanennya otomatis.
+                </p>
+            </div>
+
+            <template x-if="addPage.preview">
+                <div class="flex items-center gap-3 p-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10">
+                    <template x-if="addPage.preview.picture_url">
+                        <img :src="addPage.preview.picture_url" alt="" class="w-10 h-10 rounded-full object-cover">
+                    </template>
+                    <div class="min-w-0">
+                        <p class="text-xs font-semibold text-emerald-200 truncate" x-text="addPage.preview.page_name"></p>
+                        <p class="text-xs text-emerald-300/80" x-text="addPage.preview.message"></p>
+                    </div>
+                </div>
+            </template>
+
+            <template x-if="addPage.error">
+                <p class="text-xs text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg p-3" x-text="addPage.error"></p>
+            </template>
+
+            <div class="flex flex-col sm:flex-row gap-2.5 pt-1">
+                <button @click="addPage.show = false"
+                        class="sm:flex-1 py-2.5 rounded-lg text-sm font-semibold border border-darkborder bg-slate-900 hover:bg-slate-800 text-slate-100 transition">
+                    Batal
+                </button>
+                <button @click="verifyNewPage()" :disabled="addPage.busy"
+                        class="sm:flex-1 py-2.5 rounded-lg text-sm font-semibold border border-darkborder bg-slate-900 hover:bg-slate-800 text-slate-100 transition flex items-center justify-center gap-2 disabled:opacity-50">
+                    <i :class="addPage.busy ? 'fa-solid fa-circle-notch fa-spin' : 'fa-solid fa-link'"></i> Cek Koneksi
+                </button>
+                <button @click="submitNewPage()" :disabled="addPage.busy"
+                        class="sm:flex-1 py-2.5 rounded-lg text-sm font-bold bg-gold-500 hover:bg-gold-400 text-slate-950 transition flex items-center justify-center gap-2 disabled:opacity-50">
+                    <i :class="addPage.busy ? 'fa-solid fa-circle-notch fa-spin' : 'fa-solid fa-plus'"></i> Tambahkan
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Image Zoom Modal -->
+    <div x-show="modalImage.show" x-cloak
+         class="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
+         role="dialog" aria-modal="true" aria-label="Pratinjau poster"
+         @click.self="modalImage.show = false">
+        <div class="relative max-w-3xl w-full max-h-[90vh] flex flex-col items-center">
+            <button @click="modalImage.show = false"
+                    class="absolute -top-10 right-0 text-white text-sm hover:text-gold-400 flex items-center gap-2">
+                <i class="fa-solid fa-xmark"></i> Tutup <span class="text-slate-400 text-xs">(Esc)</span>
+            </button>
+            <img :src="modalImage.url" alt="Poster infografis ukuran penuh"
+                 class="max-h-[85vh] w-auto rounded-lg shadow-2xl border border-darkborder object-contain">
+        </div>
+    </div>
+
+    <script src="/static/js/app.js?v={{ asset_v }}"></script>
+</body>
+</html>

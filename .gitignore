@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+env/
+venv/
+.venv/
+
+# Local secrets & runtime data (SQLite DB stores API keys and FB tokens!)
+.env
+data/*
+!data/.gitkeep
+storage/generated_images/*
+!storage/generated_images/.gitkeep
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local runtime logs & Claude Code workspace settings
+*.log
+.claude/
