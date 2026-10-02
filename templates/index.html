@@ -377,92 +377,6 @@
                             </div>
                         </div>
                     </div>
-
-                    <!-- Facebook preview of the post open in the Studio -->
-                    <div class="max-w-2xl mx-auto w-full min-w-0">
-                        <div class="flex items-center justify-between mb-2 gap-2">
-                            <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                                <i class="fa-brands fa-facebook text-blue-500 mr-1"></i> Live Facebook Feed Preview
-                            </span>
-                            <span class="text-xs px-2.5 py-0.5 rounded-full border border-darkborder bg-slate-900 text-gold-400 truncate max-w-[50%]"
-                                  x-text="currentPost.visual_title"></span>
-                        </div>
-
-                        <div class="fb-mockup">
-                            <div class="fb-header">
-                                <template x-if="postPage(currentPost) && postPage(currentPost).picture_url">
-                                    <img :src="postPage(currentPost).picture_url" alt="" class="fb-avatar">
-                                </template>
-                                <template x-if="!postPage(currentPost) || !postPage(currentPost).picture_url">
-                                    <div class="fb-avatar flex items-center justify-center text-slate-400">
-                                        <i class="fa-solid fa-mountain"></i>
-                                    </div>
-                                </template>
-                                <div class="fb-author">
-                                    <div class="fb-author-name" x-text="postPage(currentPost) ? postPage(currentPost).name : 'Belum terikat Fanspage'"></div>
-                                    <div class="fb-time">
-                                        <span x-text="currentPost.status === 'published' ? formatDate(currentPost.published_at) : 'Baru saja'"></span>
-                                        · <i class="fa-solid fa-earth-americas text-xs"></i>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Caption: clamped to 3 lines like the real feed -->
-                            <div class="fb-content-text" :class="captionExpanded ? '' : 'fb-clamp'" x-text="currentPost.caption"></div>
-                            <button @click="captionExpanded = !captionExpanded"
-                                    class="fb-more"
-                                    x-text="captionExpanded ? 'Tampilkan lebih sedikit' : 'Lihat selengkapnya'"></button>
-
-                            <!-- Poster, sized to the chosen aspect ratio so there are no black bars -->
-                            <div class="fb-media cursor-zoom-in"
-                                 :style="`aspect-ratio: ${((postPage(currentPost) && postPage(currentPost).aspect_ratio) || '3:4').replace(':', '/')}`"
-                                 @click="openImageModal(currentPost.image_url)"
-                                 role="button"
-                                 tabindex="0"
-                                 @keydown.enter="openImageModal(currentPost.image_url)"
-                                 aria-label="Perbesar poster">
-                                <img :src="currentPost.image_url" alt="Poster infografis edukasi emas">
-                            </div>
-
-                            <!-- Live post: the real counts from Facebook, laid out like the feed -->
-                            <template x-if="currentPost.status === 'published'">
-                                <div class="fb-counts">
-                                    <span class="flex items-center gap-1.5">
-                                        <span class="fb-like-badge"><i class="fa-solid fa-thumbs-up"></i></span>
-                                        <span x-text="fmtCount(currentPost.metrics?.reactions)"></span>
-                                    </span>
-                                    <span x-text="`${fmtCount(currentPost.metrics?.comments)} komentar · ${fmtCount(currentPost.metrics?.shares)} kali dibagikan`"></span>
-                                </div>
-                            </template>
-
-                            <!-- Illustration of the Facebook action bar (not interactive) -->
-                            <div class="fb-footer-bar" aria-hidden="true">
-                                <span><i class="fa-regular fa-thumbs-up"></i> Suka</span>
-                                <span><i class="fa-regular fa-comment"></i> Komentar</span>
-                                <span><i class="fa-solid fa-share"></i> Bagikan</span>
-                            </div>
-
-                            <template x-if="currentPost.status === 'published'">
-                                <div class="fb-insights">
-                                    <span title="Total tayangan (Facebook Insights: views)">
-                                        <i class="fa-regular fa-eye"></i>
-                                        <strong x-text="fmtCount(currentPost.metrics?.impressions)"></strong> tayangan
-                                    </span>
-                                    <span title="Orang unik yang melihat (reach)">
-                                        <i class="fa-solid fa-users"></i>
-                                        <strong x-text="fmtCount(currentPost.metrics?.reach)"></strong> orang dijangkau
-                                    </span>
-                                    <span class="fb-insights-time"
-                                          x-text="currentPost.metrics?.last_checked_at ? `per ${formatDate(currentPost.metrics.last_checked_at)}` : 'belum diambil'"></span>
-                                    <button type="button" @click="refreshPostMetrics(currentPost)" :disabled="isRefreshingMetrics"
-                                            class="fb-insights-refresh" aria-label="Perbarui angka dari Facebook">
-                                        <i class="fa-solid fa-rotate" :class="isRefreshingMetrics && 'fa-spin'"></i>
-                                        <span x-text="isRefreshingMetrics ? 'Memuat…' : 'Perbarui'"></span>
-                                    </button>
-                                </div>
-                            </template>
-                        </div>
-                    </div>
                 </div>
             </template>
 
@@ -504,7 +418,7 @@
                     </div>
                 </div>
 
-                <template x-for="post in feed.items" :key="post.id">
+                <template x-for="post in feedPosts" :key="post.id">
                     <article class="fb-mockup" :class="currentPost && currentPost.id === post.id && 'ring-2 ring-gold-500/50'">
                         <div class="fb-header">
                             <template x-if="feedPage(post) && feedPage(post).picture_url">
@@ -558,6 +472,11 @@
                                 </span>
                                 <span class="fb-insights-time"
                                       x-text="post.metrics?.last_checked_at ? `per ${formatDate(post.metrics.last_checked_at)}` : 'belum diambil'"></span>
+                                <button type="button" @click="refreshPostMetrics(post)" :disabled="isRefreshingMetrics"
+                                        class="fb-insights-refresh" aria-label="Perbarui angka dari Facebook">
+                                    <i class="fa-solid fa-rotate" :class="isRefreshingMetrics && 'fa-spin'"></i>
+                                    <span x-text="isRefreshingMetrics ? 'Memuat…' : 'Perbarui'"></span>
+                                </button>
                             </div>
                         </template>
 

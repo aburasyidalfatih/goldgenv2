@@ -322,7 +322,6 @@ function autoPosterApp() {
         postsHasMore: false,
         postsPerPage: 30,
         isLoadingMore: false,
-        captionExpanded: false,
         editorOpen: false,   // caption editor panel under the topic picker, folded by default
         // Home feed under the Studio: every generated post, newest first, loaded in
         // small batches as the user scrolls down. 'all' = every Fanspage.
@@ -1149,6 +1148,11 @@ function autoPosterApp() {
             const i = this.feed.items.findIndex(p => p.id === post.id);
             if (i >= 0) this.feed.items[i] = { ...this.feed.items[i], ...post };
         },
+        // The post open in the editor is shown with its live (possibly unsaved) edits.
+        get feedPosts() {
+            const open = this.currentPost;
+            return this.feed.items.map(p => (open && open.id === p.id ? { ...p, ...open } : p));
+        },
         feedPage(post) {
             return this.pages.find(p => p.id === post.page_id) || null;
         },
@@ -1208,7 +1212,6 @@ function autoPosterApp() {
                 this.showToast('Gagal memuat isi postingan.', 'error');
                 return;
             }
-            this.captionExpanded = false;
             // Live post: show today's numbers, not last night's snapshot.
             if (this.metricsStale(this.currentPost)) this.refreshPostMetrics(this.currentPost, { silent: true });
             if (!silent) {
@@ -1231,7 +1234,6 @@ function autoPosterApp() {
 
             this.isGenerating = true;
             this.genStep = 1;
-            this.captionExpanded = false;
 
             const startedAt = Date.now();
             const ticker = setInterval(() => {
