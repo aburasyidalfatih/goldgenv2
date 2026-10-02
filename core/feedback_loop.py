@@ -248,6 +248,23 @@ def calculate_metric_score(reactions: int, comments: int, shares: int, reach: in
     """
     return (shares * 4.0) + (comments * 3.0) + (reactions * 1.5) + (reach * 0.05)
 
+def store_post_metrics(db: Session, post: Post, m_data: dict) -> PostMetric:
+    """Saves one fetched metrics snapshot for a post (one row per post, overwritten)."""
+    metric = db.query(PostMetric).filter(PostMetric.post_id == post.id).first()
+    if not metric:
+        metric = PostMetric(post_id=post.id, fb_post_id=post.fb_post_id)
+        db.add(metric)
+    metric.reactions = m_data["reactions"]
+    metric.comments = m_data["comments"]
+    metric.shares = m_data["shares"]
+    metric.reach = m_data["reach"]
+    metric.impressions = m_data["impressions"]
+    metric.calculated_score = calculate_metric_score(
+        m_data["reactions"], m_data["comments"], m_data["shares"], m_data["reach"])
+    metric.last_checked_at = datetime.now(timezone.utc)
+    return metric
+
+
 def update_all_post_metrics(
     db: Session,
     page_id: str,
@@ -289,35 +306,12 @@ def update_all_post_metrics(
     updated = []
     for post in published_posts:
         try:
-            m_data = fetch_post_metrics(page_id, access_token, post.fb_post_id)
-            score = calculate_metric_score(
-                m_data["reactions"],
-                m_data["comments"],
-                m_data["shares"],
-                m_data["reach"]
-            )
-
-            metric = db.query(PostMetric).filter(PostMetric.post_id == post.id).first()
-            if not metric:
-                metric = PostMetric(
-                    post_id=post.id,
-                    fb_post_id=post.fb_post_id,
-                )
-                db.add(metric)
-
-            metric.reactions = m_data["reactions"]
-            metric.comments = m_data["comments"]
-            metric.shares = m_data["shares"]
-            metric.reach = m_data["reach"]
-            metric.impressions = m_data["impressions"]
-            metric.calculated_score = score
-            metric.last_checked_at = datetime.now(timezone.utc)
-
+            metric = store_post_metrics(db, post, fetch_post_metrics(page_id, access_token, post.fb_post_id))
             updated.append({
                 "post_id": post.id,
                 "title": post.visual_title,
-                "score": score,
-                "reach": m_data["reach"]
+                "score": metric.calculated_score,
+                "reach": metric.reach,
             })
         except Exception as e:
             logger.error(f"Error updating metrics for post {post.id}: {e}")

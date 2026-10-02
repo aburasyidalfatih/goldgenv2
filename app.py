@@ -37,7 +37,7 @@ from core.gemini_client import test_gemini_key, generate_post_content, template_
 from core.openai_client import test_openai_key
 from core.ai_provider import ai_backend, PROVIDER_LABELS
 from core.imagen_client import generate_poster_image
-from core.fb_client import publish_photo_to_page
+from core.fb_client import publish_photo_to_page, fetch_post_metrics
 from core.feedback_loop import (
     get_next_recommended_topic,
     update_all_post_metrics,
@@ -46,6 +46,7 @@ from core.feedback_loop import (
     window_performance,
     page_topic_weights,
     mark_topic_used,
+    store_post_metrics,
     topics_for_page,
     learning_phase,
     focus_winners,
@@ -1034,6 +1035,32 @@ def regenerate_caption_endpoint(post_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"success": True, "caption": caption, "language": language}
 
+@app.post("/api/posts/{post_id}/metrics/refresh")
+def refresh_post_metrics_endpoint(post_id: int, db: Session = Depends(get_db)):
+    """Pulls this one post's live numbers from Facebook (likes, comments, shares, views, reach)."""
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Postingan tidak ditemukan.")
+    if post.status != "published" or not post.fb_post_id:
+        return {"success": False, "message": "Postingan ini belum tayang di Facebook."}
+    page = get_page(db, post.page_id) if post.page_id else None
+    if not page or not page.access_token:
+        return {"success": False, "message": "Fanspage postingan ini tidak punya Access Token."}
+
+    metric = store_post_metrics(db, post, fetch_post_metrics(page.page_id, page.access_token, post.fb_post_id))
+    db.commit()
+    return {
+        "success": True,
+        "metrics": {
+            "reactions": metric.reactions,
+            "comments": metric.comments,
+            "shares": metric.shares,
+            "reach": metric.reach,
+            "impressions": metric.impressions,
+            "last_checked_at": iso_utc(metric.last_checked_at),
+        },
+    }
+
 @app.delete("/api/posts/{post_id}")
 def delete_post_endpoint(post_id: int, db: Session = Depends(get_db)):
     """
@@ -1091,6 +1118,8 @@ def serialize_post(p: Post, page_names: dict, full: bool = False) -> dict:
             "comments": m.comments if m else 0,
             "shares": m.shares if m else 0,
             "reach": m.reach if m else 0,
+            "impressions": m.impressions if m else 0,
+            "last_checked_at": iso_utc(m.last_checked_at) if m else None,
         } if m else None
     }
     if full:

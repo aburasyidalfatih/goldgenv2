@@ -307,12 +307,43 @@
                                 <img :src="currentPost.image_url" alt="Poster infografis edukasi emas">
                             </div>
 
-                            <!-- Static illustration of the Facebook action bar (not interactive) -->
+                            <!-- Live post: the real counts from Facebook, laid out like the feed -->
+                            <template x-if="currentPost.status === 'published'">
+                                <div class="fb-counts">
+                                    <span class="flex items-center gap-1.5">
+                                        <span class="fb-like-badge"><i class="fa-solid fa-thumbs-up"></i></span>
+                                        <span x-text="fmtCount(currentPost.metrics?.reactions)"></span>
+                                    </span>
+                                    <span x-text="`${fmtCount(currentPost.metrics?.comments)} komentar · ${fmtCount(currentPost.metrics?.shares)} kali dibagikan`"></span>
+                                </div>
+                            </template>
+
+                            <!-- Illustration of the Facebook action bar (not interactive) -->
                             <div class="fb-footer-bar" aria-hidden="true">
                                 <span><i class="fa-regular fa-thumbs-up"></i> Suka</span>
                                 <span><i class="fa-regular fa-comment"></i> Komentar</span>
                                 <span><i class="fa-solid fa-share"></i> Bagikan</span>
                             </div>
+
+                            <template x-if="currentPost.status === 'published'">
+                                <div class="fb-insights">
+                                    <span title="Total tayangan (Facebook Insights: views)">
+                                        <i class="fa-regular fa-eye"></i>
+                                        <strong x-text="fmtCount(currentPost.metrics?.impressions)"></strong> tayangan
+                                    </span>
+                                    <span title="Orang unik yang melihat (reach)">
+                                        <i class="fa-solid fa-users"></i>
+                                        <strong x-text="fmtCount(currentPost.metrics?.reach)"></strong> orang dijangkau
+                                    </span>
+                                    <span class="fb-insights-time"
+                                          x-text="currentPost.metrics?.last_checked_at ? `per ${formatDate(currentPost.metrics.last_checked_at)}` : 'belum diambil'"></span>
+                                    <button type="button" @click="refreshPostMetrics(currentPost)" :disabled="isRefreshingMetrics"
+                                            class="fb-insights-refresh" aria-label="Perbarui angka dari Facebook">
+                                        <i class="fa-solid fa-rotate" :class="isRefreshingMetrics && 'fa-spin'"></i>
+                                        <span x-text="isRefreshingMetrics ? 'Memuat…' : 'Perbarui'"></span>
+                                    </button>
+                                </div>
+                            </template>
                         </div>
                     </div>
 

@@ -23,7 +23,7 @@ if (typeof window !== 'undefined') {   // absent when the UI tests load this fil
 function autoPosterApp() {
     return {
         activeTab: 'generator',
-        draftSnapshot: '', isSavingDraft: false, isRegenerating: false, isRewritingCaption: false,
+        draftSnapshot: '', isSavingDraft: false, isRegenerating: false, isRewritingCaption: false, isRefreshingMetrics: false,
         authEmail: '', loggingOut: false, isChangingPassword: false,
         passwordForm: { current: '', next: '', confirm: '' },
         loadedPageId: null, isLoadingPage: false, requestIds: {}, dataErrors: {},
@@ -1101,6 +1101,29 @@ function autoPosterApp() {
             }
         },
 
+        // ---------- live Facebook numbers ----------
+        fmtCount(n) { return (Number(n) || 0).toLocaleString('id-ID'); },
+        metricsStale(post) {
+            if (!post || post.status !== 'published') return false;
+            const checked = post.metrics?.last_checked_at;
+            return !checked || Date.now() - new Date(checked).getTime() > 10 * 60 * 1000;
+        },
+        async refreshPostMetrics(post, { silent = false } = {}) {
+            if (!post || this.isRefreshingMetrics) return;
+            this.isRefreshingMetrics = true;
+            try {
+                const res = await fetch(`/api/posts/${post.id}/metrics/refresh`, { method: 'POST' });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.message || data.detail || 'Gagal mengambil angka dari Facebook.');
+                if (this.currentPost?.id === post.id) this.currentPost.metrics = data.metrics;
+                if (!silent) this.showToast('Angka terbaru dari Facebook dimuat.');
+            } catch (err) {
+                if (!silent) this.showToast(err.message || 'Gagal menghubungi server.', 'error');
+            } finally {
+                this.isRefreshingMetrics = false;
+            }
+        },
+
         async openInStudio(post, { silent = false, discard = false } = {}) {
             if (this.draftDirty && !discard) {
                 this.leaveDraft(() => this.openInStudio(post, {silent, discard: true})); return;
@@ -1115,6 +1138,8 @@ function autoPosterApp() {
                 return;
             }
             this.captionExpanded = false;
+            // Live post: show today's numbers, not last night's snapshot.
+            if (this.metricsStale(this.currentPost)) this.refreshPostMetrics(this.currentPost, { silent: true });
             if (!silent) {
                 this.switchTab('generator');
                 window.scrollTo({ top: 0, behavior: 'smooth' });
