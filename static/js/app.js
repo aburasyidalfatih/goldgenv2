@@ -88,6 +88,7 @@ function autoPosterApp() {
             this.requestIds.detail = (this.requestIds.detail || 0) + 1;
             this.currentPost = post;
             this.draftSnapshot = JSON.stringify([post.visual_title, post.caption]);
+            this.patchFeedItem(post);
         },
         leaveDraft(action) {
             if (!this.draftDirty) { action(); return; }
@@ -322,6 +323,11 @@ function autoPosterApp() {
         postsPerPage: 30,
         isLoadingMore: false,
         captionExpanded: false,
+        // Home feed under the Studio: every generated post, newest first, loaded in
+        // small batches as the user scrolls down. 'all' = every Fanspage.
+        feed: { items: [], hasMore: true, loading: false, error: '', scope: 'all', total: 0, expanded: {} },
+        feedPerPage: 10,
+        feedRequestId: 0,
         analyticsSummary: {
             total_posts: 0,
             total_reach: 0,
@@ -378,6 +384,7 @@ function autoPosterApp() {
             if (this.pages.length === 0) {
                 this.activeTab = 'pages';   // nothing works without a Fanspage
             }
+            this.installFeedObserver();
         },
 
         // ---------- fanspage management ----------
@@ -1072,6 +1079,7 @@ function autoPosterApp() {
                 const data = await this.scopedData('posts', `/api/posts${this.pageQuery()}${sep}limit=${this.postsPerPage}&offset=${offset}&search=${encodeURIComponent(this.historySearch)}&status=${encodeURIComponent(this.historyStatus)}`);
                 if (!data) return;
                 this.postsList = append ? [...this.postsList, ...data.items] : data.items;
+                if (!append) this.resetFeed();
                 this.postsTotal = data.total;
                 this.postsHasMore = data.has_more;
                 // The list is a summary; the Studio needs the full record.
@@ -1081,6 +1089,67 @@ function autoPosterApp() {
             } catch (err) {
                 console.error('Error loading posts:', err);
             }
+        },
+
+        // ---------- home feed (infinite scroll) ----------
+        feedUrl(offset) {
+            const page = this.feed.scope === 'page' && this.activePageId ? `&page=${this.activePageId}` : '';
+            return `/api/posts?with_caption=true&limit=${this.feedPerPage}&offset=${offset}${page}`;
+        },
+        setFeedScope(scope) {
+            if (this.feed.scope === scope) return;
+            this.feed.scope = scope;
+            this.resetFeed();
+        },
+        resetFeed() {
+            this.feedRequestId++;   // a batch still in flight belongs to the old list
+            this.feed = { ...this.feed, items: [], hasMore: true, loading: false, error: '', expanded: {} };
+            this.loadFeed();
+        },
+        async loadFeed() {
+            if (this.feed.loading || !this.feed.hasMore) return;
+            const id = this.feedRequestId;
+            this.feed.loading = true;
+            this.feed.error = '';
+            try {
+                const res = await fetch(this.feedUrl(this.feed.items.length));
+                if (!res.ok) throw new Error('Gagal memuat postingan.');
+                const data = await res.json();
+                if (id !== this.feedRequestId) return;
+                // A post generated meanwhile shifts the offsets by one: skip repeats.
+                const seen = new Set(this.feed.items.map(p => p.id));
+                this.feed.items = [...this.feed.items, ...data.items.filter(p => !seen.has(p.id))];
+                this.feed.total = data.total;
+                this.feed.hasMore = data.has_more && data.items.length > 0;
+            } catch (err) {
+                if (id === this.feedRequestId) this.feed.error = err.message || 'Gagal memuat postingan.';
+            } finally {
+                if (id === this.feedRequestId) {
+                    this.feed.loading = false;
+                    // A tall screen can still show the bottom after a batch: keep going.
+                    if (!this.feed.error) this.$nextTick(() => { if (this.feedSentinelVisible()) this.loadFeed(); });
+                }
+            }
+        },
+        feedSentinelVisible() {
+            const el = this.$refs?.feedSentinel;
+            if (!el || this.activeTab !== 'generator' || typeof window === 'undefined') return false;
+            const box = el.getBoundingClientRect();
+            return box.height > 0 && box.top < window.innerHeight + 600;
+        },
+        installFeedObserver() {
+            const el = this.$refs?.feedSentinel;
+            if (!el || typeof IntersectionObserver === 'undefined') return;
+            new IntersectionObserver(entries => {
+                if (entries.some(e => e.isIntersecting) && this.activeTab === 'generator') this.loadFeed();
+            }, { rootMargin: '0px 0px 600px 0px' }).observe(el);
+        },
+        patchFeedItem(post) {
+            const i = this.feed.items.findIndex(p => p.id === post.id);
+            if (i >= 0) this.feed.items[i] = { ...this.feed.items[i], ...post };
+        },
+        feedPage(post) {
+            return this.pages.find(p => p.id === post.page_id) || null;
         },
 
         async loadMorePosts() {
@@ -1116,6 +1185,7 @@ function autoPosterApp() {
                 const data = await res.json();
                 if (!data.success) throw new Error(data.message || data.detail || 'Gagal mengambil angka dari Facebook.');
                 if (this.currentPost?.id === post.id) this.currentPost.metrics = data.metrics;
+                this.patchFeedItem({id: post.id, metrics: data.metrics});
                 if (!silent) this.showToast('Angka terbaru dari Facebook dimuat.');
             } catch (err) {
                 if (!silent) this.showToast(err.message || 'Gagal menghubungi server.', 'error');

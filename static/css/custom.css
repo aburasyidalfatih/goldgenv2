@@ -233,3 +233,24 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 ::-webkit-scrollbar-thumb:hover {
     background: #374151;
 }
+
+/* Home feed: open a post in the Studio, or on Facebook */
+.fb-feed-actions {
+    display: flex;
+    gap: 4px;
+    padding: 6px 8px;
+    border-top: 1px solid #2f3031;
+}
+.fb-feed-actions > * {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px;
+    border-radius: 6px;
+    color: #b0b3b8;
+    font-size: 13px;
+    font-weight: 600;
+}
+.fb-feed-actions > *:hover { background: #3a3b3c; color: #e4e6eb; }

@@ -1091,11 +1091,12 @@ def delete_post_endpoint(post_id: int, db: Session = Depends(get_db)):
 
 CAPTION_PREVIEW_CHARS = 160
 
-def serialize_post(p: Post, page_names: dict, full: bool = False) -> dict:
+def serialize_post(p: Post, page_names: dict, full: bool = False, with_caption: bool = False) -> dict:
     """
     List view stays light: the full caption and image prompt are only sent for a
     single post. With a year of history those two fields alone were hundreds of
-    kilobytes per request.
+    kilobytes per request. The home feed asks for captions (`with_caption`) but
+    loads a handful of posts at a time.
     """
     m = p.metrics[0] if p.metrics else None
     data = {
@@ -1122,8 +1123,9 @@ def serialize_post(p: Post, page_names: dict, full: bool = False) -> dict:
             "last_checked_at": iso_utc(m.last_checked_at) if m else None,
         } if m else None
     }
-    if full:
+    if full or with_caption:
         data["caption"] = p.caption
+    if full:
         data["prompt_used"] = p.prompt_used
     return data
 
@@ -1154,6 +1156,7 @@ def list_posts(
     offset: int = 0,
     search: str = "",
     status: str = "",
+    with_caption: bool = False,
     db: Session = Depends(get_db),
 ):
     query = db.query(Post)
@@ -1168,10 +1171,10 @@ def list_posts(
         query = query.filter(Post.status == status)
     total = query.count()
     limit = max(1, min(limit, 200))
-    posts = query.order_by(Post.created_at.desc()).offset(max(0, offset)).limit(limit).all()
+    posts = query.order_by(Post.created_at.desc(), Post.id.desc()).offset(max(0, offset)).limit(limit).all()
 
     page_names = {p.id: p.name for p in list_page_rows(db)}
-    items = [serialize_post(p, page_names) for p in posts]
+    items = [serialize_post(p, page_names, with_caption=with_caption) for p in posts]
     return {
         "items": items,
         "total": total,

@@ -479,6 +479,112 @@
                     </template>
                 </div>
             </template>
+
+            <!-- Home feed: every generated post, newest first; scrolling down loads older ones -->
+            <section aria-labelledby="feed-title" class="max-w-2xl mx-auto w-full pt-4 space-y-4">
+                <div class="flex items-center justify-between gap-3 flex-wrap">
+                    <h2 id="feed-title" class="text-sm font-bold text-white flex items-center gap-2">
+                        <i class="fa-solid fa-newspaper text-gold-400"></i> Semua Postingan
+                        <span class="text-xs font-normal text-slate-400" x-show="feed.total" x-text="`(${fmtCount(feed.total)})`"></span>
+                    </h2>
+                    <div class="flex gap-1 bg-slate-900/80 p-1 rounded-lg border border-darkborder text-xs" role="group" aria-label="Tampilkan postingan dari">
+                        <button type="button" @click="setFeedScope('all')" :aria-pressed="feed.scope === 'all'"
+                                :class="feed.scope === 'all' ? 'bg-gold-500 text-slate-950 font-semibold' : 'text-slate-300 hover:text-white'"
+                                class="px-3 py-1.5 rounded-md transition">Semua Fanspage</button>
+                        <button type="button" @click="setFeedScope('page')" :aria-pressed="feed.scope === 'page'"
+                                :class="feed.scope === 'page' ? 'bg-gold-500 text-slate-950 font-semibold' : 'text-slate-300 hover:text-white'"
+                                class="px-3 py-1.5 rounded-md transition truncate max-w-[180px]"
+                                x-text="activePage ? activePage.name : 'Fanspage aktif'"></button>
+                    </div>
+                </div>
+
+                <template x-for="post in feed.items" :key="post.id">
+                    <article class="fb-mockup" :class="currentPost && currentPost.id === post.id && 'ring-2 ring-gold-500/50'">
+                        <div class="fb-header">
+                            <template x-if="feedPage(post) && feedPage(post).picture_url">
+                                <img :src="feedPage(post).picture_url" alt="" class="fb-avatar" loading="lazy">
+                            </template>
+                            <template x-if="!feedPage(post) || !feedPage(post).picture_url">
+                                <div class="fb-avatar flex items-center justify-center text-slate-400">
+                                    <i class="fa-solid fa-mountain"></i>
+                                </div>
+                            </template>
+                            <div class="fb-author min-w-0 flex-1">
+                                <div class="fb-author-name truncate" x-text="post.page_name || 'Tanpa Fanspage'"></div>
+                                <div class="fb-time">
+                                    <span x-text="formatDate(post.published_at || post.created_at)"></span>
+                                    · <i class="fa-solid fa-earth-americas text-xs"></i>
+                                </div>
+                            </div>
+                            <span x-show="post.status !== 'published'" class="text-xs px-2 py-0.5 rounded-full border shrink-0"
+                                  :class="statusBadgeClass(post.status)" x-text="statusLabel(post.status)"></span>
+                        </div>
+
+                        <div class="fb-content-text" :class="feed.expanded[post.id] ? '' : 'fb-clamp'" x-text="post.caption"></div>
+                        <button type="button" class="fb-more" @click="feed.expanded[post.id] = !feed.expanded[post.id]"
+                                x-text="feed.expanded[post.id] ? 'Tampilkan lebih sedikit' : 'Lihat selengkapnya'"></button>
+
+                        <div class="fb-media cursor-zoom-in"
+                             :style="`aspect-ratio: ${((feedPage(post) && feedPage(post).aspect_ratio) || '3:4').replace(':', '/')}`"
+                             @click="openImageModal(post.image_url)" @keydown.enter="openImageModal(post.image_url)"
+                             role="button" tabindex="0" aria-label="Perbesar poster">
+                            <img :src="post.image_url" alt="Poster infografis edukasi emas" loading="lazy">
+                        </div>
+
+                        <template x-if="post.status === 'published'">
+                            <div class="fb-counts">
+                                <span class="flex items-center gap-1.5">
+                                    <span class="fb-like-badge"><i class="fa-solid fa-thumbs-up"></i></span>
+                                    <span x-text="fmtCount(post.metrics?.reactions)"></span>
+                                </span>
+                                <span x-text="`${fmtCount(post.metrics?.comments)} komentar · ${fmtCount(post.metrics?.shares)} kali dibagikan`"></span>
+                            </div>
+                        </template>
+                        <template x-if="post.status === 'published'">
+                            <div class="fb-insights">
+                                <span title="Total tayangan (Facebook Insights: views)">
+                                    <i class="fa-regular fa-eye"></i>
+                                    <strong x-text="fmtCount(post.metrics?.impressions)"></strong> tayangan
+                                </span>
+                                <span title="Orang unik yang melihat (reach)">
+                                    <i class="fa-solid fa-users"></i>
+                                    <strong x-text="fmtCount(post.metrics?.reach)"></strong> orang dijangkau
+                                </span>
+                                <span class="fb-insights-time"
+                                      x-text="post.metrics?.last_checked_at ? `per ${formatDate(post.metrics.last_checked_at)}` : 'belum diambil'"></span>
+                            </div>
+                        </template>
+
+                        <div class="fb-feed-actions">
+                            <button type="button" @click="openInStudio(post)">
+                                <i class="fa-solid fa-pen-to-square"></i>
+                                <span x-text="post.status === 'published' ? 'Lihat di Studio' : 'Buka di Studio'"></span>
+                            </button>
+                            <template x-if="post.fb_post_url">
+                                <a :href="post.fb_post_url" target="_blank" rel="noopener">
+                                    <i class="fa-brands fa-facebook"></i> Buka di Facebook
+                                </a>
+                            </template>
+                        </div>
+                    </article>
+                </template>
+
+                <!-- Reaching this marker loads the next (older) batch -->
+                <div x-ref="feedSentinel" class="h-px" aria-hidden="true"></div>
+                <p x-show="feed.loading" x-cloak role="status" class="text-center text-xs text-slate-400 py-4">
+                    <i class="fa-solid fa-circle-notch fa-spin mr-1.5"></i> Memuat postingan sebelumnya…
+                </p>
+                <p x-show="feed.error" x-cloak role="alert" class="text-center text-xs text-rose-300 py-4">
+                    <span x-text="feed.error"></span>
+                    <button type="button" @click="loadFeed()" class="ml-2 underline">Coba lagi</button>
+                </p>
+                <p x-show="!feed.loading && !feed.error && !feed.hasMore && feed.items.length" x-cloak
+                   class="text-center text-xs text-slate-500 py-4">
+                    <i class="fa-solid fa-flag-checkered mr-1.5"></i> Sudah sampai postingan paling awal.
+                </p>
+                <p x-show="!feed.loading && !feed.error && !feed.hasMore && !feed.items.length" x-cloak
+                   class="text-center text-xs text-slate-400 py-4">Belum ada postingan.</p>
+            </section>
         </div>
 
         <!-- ======================================================== -->
