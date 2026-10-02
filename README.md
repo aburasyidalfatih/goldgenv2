@@ -167,6 +167,8 @@ Catatan:
 * Jalankan **satu replika saja**. Scheduler Autopilot berjalan di dalam proses aplikasi dan database-nya SQLite — dua replika berarti posting ganda.
 * Alternatif: tipe **Docker Compose** memakai `docker-compose.yml` di repo ini (volume & environment sudah didefinisikan; atur domain ke port `8000`).
 * Ingin memindahkan data lokal (API key, Fanspage, riwayat postingan)? Hentikan aplikasi lokal, lalu salin `data/autoposter.db` ke volume `/app/data` di server sebelum start pertama. Jika tidak, cukup isi ulang pengaturan dari dashboard.
+* Build macet di `pip install` dengan *Read timed out* ke `pypi.org`? Sebagian penyedia VPS tidak bisa merutekan ke sebagian jaringan Fastly (CDN PyPI). Cek dari VPS: `curl -sS -o /dev/null -w "%{http_code}
+" --max-time 15 --resolve pypi.org:443:199.232.192.223 https://pypi.org/simple/`; bila `200`, isi Environment Dokploy dengan `PYPI_HOST_OVERRIDE=pypi.org:199.232.192.223` dan `PYPI_FILES_HOST_OVERRIDE=files.pythonhosted.org:199.232.192.223`, lalu Deploy ulang. Paket tetap dari PyPI resmi dengan TLS terverifikasi.
 * Lupa password? Dari terminal container di Dokploy: `python /app/scripts/atur_login.py email@anda.com` (terminal Dokploy terbuka di `/`, jadi pakai path lengkap), lalu **Restart** service bila login sedang terkunci karena terlalu banyak percobaan gagal.
 
 ---

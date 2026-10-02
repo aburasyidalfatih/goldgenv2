@@ -3,7 +3,16 @@
 # to this one — see .env.example).
 services:
   autoposter:
-    build: .
+    build:
+      context: .
+      # Escape hatch for a VPS whose provider cannot route to part of Fastly (PyPI's
+      # CDN): pin pypi.org / files.pythonhosted.org to a Fastly address that works,
+      # e.g. PYPI_HOST_OVERRIDE=pypi.org:199.232.192.223 in Dokploy's Environment tab.
+      # Packages still come from the official PyPI over verified TLS. Unset, the
+      # entries point a dummy name at localhost and change nothing.
+      extra_hosts:
+        - "${PYPI_HOST_OVERRIDE:-pypi-override-unset.invalid:127.0.0.1}"
+        - "${PYPI_FILES_HOST_OVERRIDE:-pypi-files-override-unset.invalid:127.0.0.1}"
     restart: unless-stopped
     # Reached through Dokploy's Traefik (Domains tab -> port 8000), not a host port.
     # Running locally without Dokploy? Use ports: ["8000:8000"] instead.
