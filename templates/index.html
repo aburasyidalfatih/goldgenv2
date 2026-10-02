@@ -461,7 +461,7 @@
             </template>
 
             <!-- Home feed: every generated post, newest first; scrolling down loads older ones -->
-            <section aria-labelledby="feed-title" class="max-w-2xl mx-auto w-full pt-4 space-y-4">
+            <section aria-labelledby="feed-title" class="w-full pt-4 space-y-4">
                 <div class="flex items-center justify-between gap-3 flex-wrap">
                     <h2 id="feed-title" class="text-sm font-bold text-white flex items-center gap-2">
                         <i class="fa-solid fa-newspaper text-gold-400"></i> Semua Postingan
@@ -478,6 +478,8 @@
                     </div>
                 </div>
 
+                <!-- One column on phones, two side by side on a PC -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
                 <template x-for="post in feedPosts" :key="post.id">
                     <article class="fb-mockup" :class="currentPost && currentPost.id === post.id && 'ring-2 ring-gold-500/50'">
                         <div class="fb-header">
@@ -553,6 +555,7 @@
                         </div>
                     </article>
                 </template>
+                </div>
 
                 <!-- Reaching this marker loads the next (older) batch -->
                 <div x-ref="feedSentinel" class="h-px" aria-hidden="true"></div>

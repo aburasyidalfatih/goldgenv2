@@ -1256,7 +1256,7 @@ function autoPosterApp() {
 
                 if (data.success) {
                     this.genStep = 4;
-                    if (this.activePageId === originalPage) { this.acceptPost(data.post); this.editorOpen = true; }
+                    if (this.activePageId === originalPage) this.acceptPost(data.post);
                     await Promise.all([this.fetchPosts(), this.fetchTopics()]);
                     this.showToast('Konten infografis berhasil dibuat!');
                 } else {
