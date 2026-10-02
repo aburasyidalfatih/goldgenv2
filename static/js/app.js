@@ -323,6 +323,7 @@ function autoPosterApp() {
         postsPerPage: 30,
         isLoadingMore: false,
         captionExpanded: false,
+        editorOpen: false,   // caption editor panel under the topic picker, folded by default
         // Home feed under the Studio: every generated post, newest first, loaded in
         // small batches as the user scrolls down. 'all' = every Fanspage.
         feed: { items: [], hasMore: true, loading: false, error: '', scope: 'all', total: 0, expanded: {} },
@@ -1211,6 +1212,7 @@ function autoPosterApp() {
             // Live post: show today's numbers, not last night's snapshot.
             if (this.metricsStale(this.currentPost)) this.refreshPostMetrics(this.currentPost, { silent: true });
             if (!silent) {
+                this.editorOpen = true;   // opened on purpose: the user wants to edit it
                 this.switchTab('generator');
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             }
