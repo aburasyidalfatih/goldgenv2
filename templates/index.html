@@ -1691,6 +1691,86 @@
                     </div>
                 </div>
 
+                <hr class="border-darkborder">
+
+                <!-- 4. Email alerts when the autopilot hits a problem it cannot fix itself -->
+                <div class="space-y-4">
+                    <div class="flex items-start justify-between gap-4">
+                        <div class="min-w-0">
+                            <h3 class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                                <i class="fa-solid fa-envelope"></i> 4. Notifikasi Email
+                            </h3>
+                            <p class="text-xs text-slate-400 mt-1">
+                                Email dikirim jika posting otomatis gagal, token Facebook bermasalah, API key AI habis/ditolak,
+                                balas komentar otomatis terhenti, atau backup gagal. Masalah yang sama paling sering dikirim
+                                sekali tiap beberapa jam.
+                            </p>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                            <input type="checkbox" class="sr-only peer" aria-label="Aktifkan notifikasi email"
+                                   :checked="settings.notify_email_enabled === 'true'"
+                                   @change="settings.notify_email_enabled = $event.target.checked ? 'true' : 'false'; settingsDirty = true">
+                            <div class="w-11 h-6 bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-gold-500/60 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-gold-500"></div>
+                        </label>
+                    </div>
+
+                    <div class="p-4 rounded-xl border border-darkborder bg-slate-900/60 space-y-4">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label for="notify-to" class="block text-xs font-medium text-slate-200 mb-1">Kirim ke email</label>
+                                <input id="notify-to" type="email" x-model="settings.notify_email_to" @input="settingsDirty = true"
+                                       :placeholder="notifyRecipient || 'email@contoh.com'"
+                                       class="w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/60 text-slate-200">
+                                <p class="text-xs text-slate-500 mt-1">Kosongkan untuk memakai email login.</p>
+                            </div>
+                            <div>
+                                <label for="smtp-user" class="block text-xs font-medium text-slate-200 mb-1">Email pengirim (akun Gmail)</label>
+                                <input id="smtp-user" type="email" x-model="settings.smtp_user" @input="settingsDirty = true"
+                                       placeholder="akun.anda@gmail.com" autocomplete="off"
+                                       class="w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/60 text-slate-200">
+                            </div>
+                        </div>
+
+                        <div>
+                            <label for="smtp-password" class="block text-xs font-medium text-slate-200 mb-1">App Password Gmail</label>
+                            <input id="smtp-password" type="password" x-model="settings.smtp_password" @input="settingsDirty = true"
+                                   @focus="clearMaskOnEdit('smtp_password')" @blur="restoreMaskIfEmpty('smtp_password')"
+                                   placeholder="16 huruf, mis. abcd efgh ijkl mnop" autocomplete="new-password"
+                                   class="w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/60 text-slate-200 font-mono">
+                            <p x-show="isSecretStored('smtp_password')" x-cloak class="text-xs text-emerald-300 mt-1">
+                                <i class="fa-solid fa-lock"></i> App Password tersimpan di server (disembunyikan).
+                            </p>
+                            <p class="text-xs text-slate-400 mt-1.5 leading-relaxed">
+                                Bukan password Gmail biasa. Buat di
+                                <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener" class="underline text-gold-300 hover:text-gold-200">myaccount.google.com/apppasswords</a>
+                                (Verifikasi 2 Langkah harus aktif), beri nama mis. "AutoPoster", lalu salin 16 hurufnya ke sini.
+                            </p>
+                        </div>
+
+                        <details class="text-xs text-slate-400">
+                            <summary class="cursor-pointer hover:text-slate-200">Server SMTP lain (opsional)</summary>
+                            <div class="grid grid-cols-3 gap-3 mt-2">
+                                <div class="col-span-2">
+                                    <label for="smtp-host" class="block text-xs font-medium text-slate-200 mb-1">Host SMTP</label>
+                                    <input id="smtp-host" type="text" x-model="settings.smtp_host" @input="settingsDirty = true"
+                                           class="w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/60 text-slate-200">
+                                </div>
+                                <div>
+                                    <label for="smtp-port" class="block text-xs font-medium text-slate-200 mb-1">Port</label>
+                                    <input id="smtp-port" type="number" x-model="settings.smtp_port" @input="settingsDirty = true"
+                                           class="w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/60 text-slate-200">
+                                </div>
+                            </div>
+                        </details>
+
+                        <button type="button" @click="testEmail()" :disabled="isTestingEmail || isSaving"
+                                class="w-full sm:w-auto px-4 py-2 rounded-lg text-xs font-semibold border border-gold-500/40 bg-gold-500/10 hover:bg-gold-500/20 text-gold-300 transition flex items-center justify-center gap-2 disabled:opacity-50">
+                            <i :class="isTestingEmail ? 'fa-solid fa-circle-notch fa-spin' : 'fa-solid fa-paper-plane'"></i>
+                            <span x-text="isTestingEmail ? 'Mengirim…' : 'Simpan &amp; Kirim Email Uji'"></span>
+                        </button>
+                    </div>
+                </div>
+
                 <!-- Save -->
                 <div class="pt-2 sticky bottom-0 bg-darkcard pb-1">
                     <button @click="saveSettings()" :disabled="isSaving"
@@ -1749,6 +1829,36 @@
                     <li>Atur bahasa, rasio, dan jadwal di tab Fanspage, lalu Simpan Preferensi.</li>
                     <li>Klik <span class="text-slate-100 font-medium">Simpan Seluruh Pengaturan</span>.</li>
                 </ol>
+            </div>
+
+            <div class="bg-darkcard border border-darkborder rounded-xl p-5 sm:p-6 shadow-lg space-y-3">
+                <h3 class="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                    <i class="fa-solid fa-database text-gold-400"></i> Backup Database
+                </h3>
+                <p class="text-xs text-slate-400 leading-relaxed">
+                    Otomatis tiap malam pukul 03:30, disimpan <span x-text="backups.keep_days"></span> hari.
+                    Berisi API key &amp; token — simpan unduhan di tempat aman.
+                </p>
+                <p class="text-xs" :class="backups.items.length ? 'text-emerald-300' : 'text-amber-300'"
+                   x-text="backups.items.length ? `Terakhir: ${formatDate(backups.items[0].created_at)}` : 'Belum ada backup.'"></p>
+                <ul x-show="backups.items.length" x-cloak class="space-y-1 max-h-40 overflow-y-auto pr-1">
+                    <template x-for="b in backups.items" :key="b.name">
+                        <li class="flex items-center justify-between gap-2 text-xs">
+                            <span class="text-slate-300 truncate" x-text="formatDate(b.created_at)"></span>
+                            <a :href="`/api/backups/${b.name}`" download
+                               class="shrink-0 text-gold-300 hover:text-gold-200 flex items-center gap-1"
+                               :aria-label="`Unduh backup ${formatDate(b.created_at)}`">
+                                <span x-text="`${Math.max(1, Math.round(b.size / 1024))} KB`" class="text-slate-500"></span>
+                                <i class="fa-solid fa-download"></i>
+                            </a>
+                        </li>
+                    </template>
+                </ul>
+                <button type="button" @click="makeBackup()" :disabled="isBackingUp"
+                        class="w-full py-2 rounded-lg text-xs font-semibold border border-gold-500/40 bg-gold-500/10 hover:bg-gold-500/20 text-gold-300 transition flex items-center justify-center gap-1.5 disabled:opacity-50">
+                    <i :class="isBackingUp ? 'fa-solid fa-circle-notch fa-spin' : 'fa-solid fa-floppy-disk'"></i>
+                    <span x-text="isBackingUp ? 'Membuat backup…' : 'Backup Sekarang'"></span>
+                </button>
             </div>
 
             <div class="bg-darkcard border border-darkborder rounded-xl p-5 sm:p-6 shadow-lg space-y-3">

@@ -131,14 +131,41 @@ python scripts/uji_pemulihan.py          # gagal di tengah jalan + backup/restor
 
 ## 💾 Backup
 
-Cukup salin dua folder ini saat aplikasi **berhenti**:
+**Otomatis:** tiap malam pukul 03:30 aplikasi menyalin database (kredensial, riwayat,
+pembelajaran topik) ke `backups/autoposter-YYYYMMDD-HHMMSS.db.gz`. Salinan dibuat dengan
+API backup SQLite (aman walau aplikasi sedang berjalan), dicek integritasnya, dikompres,
+dan disimpan **14 hari**. Di Docker folder ini volume tersendiri (`autoposter_backups`),
+terpisah dari volume database. Bila VPS mati saat jadwal backup, backup dibuat begitu
+aplikasi menyala lagi. Backup yang gagal dikirim sebagai notifikasi email.
 
-```
-data/       -> database (kredensial, riwayat, pembelajaran)
-storage/    -> poster hasil generate
+Di tab **Pengaturan > Backup Database** ada tombol **Backup Sekarang** dan tautan unduh
+tiap backup — unduh sesekali ke komputer Anda sebagai salinan di luar VPS. Isinya memuat
+API key & token, jadi simpan di tempat aman.
+
+**Memulihkan** (aplikasi dihentikan dulu):
+
+```bash
+gunzip -c autoposter-20261002-033000.db.gz > data/autoposter.db
+rm -f data/autoposter.db-wal data/autoposter.db-shm
 ```
 
-Database memakai mode **WAL**, jadi saat aplikasi sedang berjalan ada berkas pendamping `autoposter.db-wal` dan `-shm`. Kalau menyalin tanpa menghentikan aplikasi, sertakan ketiganya — kalau tidak, transaksi terakhir bisa hilang. Memulihkan cukup mengembalikan kedua folder; jadwal autopilot dibangun ulang sendiri dari database saat aplikasi dinyalakan.
+Di Docker: hentikan service, salin hasil `gunzip` ke volume `autoposter_data`
+sebagai `autoposter.db`, lalu jalankan lagi. Poster di `storage/` tidak ikut dibackup
+(hanya gambar; bisa dirender ulang dari prompt tersimpan).
+
+## 📧 Notifikasi Email
+
+Tab **Pengaturan > 4. Notifikasi Email**. Aplikasi mengirim email bila:
+
+- posting otomatis gagal (AI error / saldo habis, atau Facebook menolak),
+- token Fanspage tidak berlaku (dicek tiap malam saat sinkron metrik),
+- API key AI kosong saat jadwal posting tiba,
+- balas komentar otomatis terhenti, atau sinkron metrik / evolusi topik / backup gagal.
+
+Masalah yang sama dikirim paling sering sekali per beberapa jam agar inbox tidak banjir.
+Untuk Gmail: aktifkan Verifikasi 2 Langkah, buat **App Password** di
+<https://myaccount.google.com/apppasswords>, isi email Gmail pengirim + App Password,
+lalu klik **Simpan & Kirim Email Uji**. Email tujuan kosong = email login dashboard.
 
 ---
 
@@ -183,6 +210,7 @@ Catatan:
 | `FB_GRAPH_API_VERSION` | `v25.0` | Versi Facebook Graph API. Ganti bila Meta men-sunset versi ini. |
 | `AUTOPOSTER_DATA_DIR` | `./data` | Lokasi database SQLite. Dipakai suite tes agar tidak menyentuh data asli. |
 | `AUTOPOSTER_STORAGE_DIR` | `./storage` | Lokasi poster hasil generate. |
+| `AUTOPOSTER_BACKUP_DIR` | `./backups` | Lokasi backup database harian. |
 
 Pengaturan evolusi topik (`auto_topic_evolution`, `topic_window_days`, `max_new_topics_per_cycle`) diatur dari tab **Pengaturan**, bukan environment variable.
 

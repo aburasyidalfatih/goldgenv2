@@ -27,7 +27,10 @@ services:
       # Persistent storage for the SQLite database (API keys, tokens, login) & posters
       - autoposter_data:/app/data
       - autoposter_storage:/app/storage
+      # Nightly database backups (14 days) on their own volume
+      - autoposter_backups:/app/backups
 
 volumes:
   autoposter_data:
   autoposter_storage:
+  autoposter_backups:

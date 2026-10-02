@@ -344,6 +344,11 @@ function autoPosterApp() {
         isSyncing: false,
         isOptimizing: false,
         isTestingGemini: false,
+        // Email alerts & database backups (Pengaturan)
+        notifyRecipient: '',
+        isTestingEmail: false,
+        backups: { items: [], keep_days: 14 },
+        isBackingUp: false,
         isTestingOpenai: false,
 
 
@@ -688,6 +693,10 @@ function autoPosterApp() {
                 this.activeTab = tab;
                 this.$nextTick(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
             }
+            if (tab === 'settings') {
+                this.fetchBackups();
+                this.fetchNotifyInfo();
+            }
             if (tab === 'replies') {
                 if (!this.replyFormDirty) this.syncReplyForm();
                 this.fetchReplies();
@@ -909,6 +918,52 @@ function autoPosterApp() {
                 return false;
             } finally {
                 this.isSaving = false;
+            }
+        },
+
+        // ---------- email alerts & backups ----------
+        async fetchNotifyInfo() {
+            try {
+                const res = await fetch('/api/notifications');
+                if (res.ok) this.notifyRecipient = (await res.json()).recipient || '';
+            } catch (err) { /* placeholder only */ }
+        },
+        async testEmail() {
+            if (this.isTestingEmail) return;
+            this.isTestingEmail = true;
+            try {
+                // The test uses what the server has, so save the form first.
+                if (this.settingsDirty && !(await this.saveSettings({ silent: true }))) return;
+                const res = await fetch('/api/notifications/test', { method: 'POST' });
+                const data = await res.json();
+                this.showToast(data.message, data.success ? 'success' : 'error');
+                this.fetchNotifyInfo();
+            } catch (err) {
+                this.showToast('Gagal menghubungi server.', 'error');
+            } finally {
+                this.isTestingEmail = false;
+            }
+        },
+        async fetchBackups() {
+            try {
+                const res = await fetch('/api/backups');
+                if (res.ok) this.backups = await res.json();
+            } catch (err) {
+                console.error('Error loading backups:', err);
+            }
+        },
+        async makeBackup() {
+            if (this.isBackingUp) return;
+            this.isBackingUp = true;
+            try {
+                const res = await fetch('/api/backups', { method: 'POST' });
+                const data = await res.json();
+                this.showToast(data.message, data.success ? 'success' : 'error');
+                await this.fetchBackups();
+            } catch (err) {
+                this.showToast('Gagal menghubungi server.', 'error');
+            } finally {
+                this.isBackingUp = false;
             }
         },
 

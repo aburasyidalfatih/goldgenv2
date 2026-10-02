@@ -22,7 +22,7 @@ RUN pip install --no-cache-dir --only-binary=:all: -r requirements.txt
 COPY . .
 
 # Ensure storage and data directories exist
-RUN mkdir -p /app/data /app/storage/generated_images
+RUN mkdir -p /app/data /app/storage/generated_images /app/backups
 
 # Expose server port
 EXPOSE 8000

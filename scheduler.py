@@ -28,6 +28,9 @@ from core.comment_reply import process_page_comments
 from core.gemini_client import generate_post_content
 from core.imagen_client import generate_poster_image
 from core.fb_client import publish_photo_to_page
+from core.pages import verify_page_credentials
+from core.notifier import notify
+from core.backup import create_backup, latest_backup_age_hours
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +90,7 @@ def auto_generate_and_post_job(page_row_id: int):
     """
     db = SessionLocal()
     poster_sementara = None
+    page = None
     try:
         page = db.query(FacebookPage).filter(FacebookPage.id == page_row_id).first()
         if not page:
@@ -97,12 +101,18 @@ def auto_generate_and_post_job(page_row_id: int):
             return
         if not page.access_token:
             logger.warning(f"[Scheduler] '{page.name}' has no access token. Skipping.")
+            notify(db, f"no-token:{page.id}", f"Autopilot '{page.name}' berhenti: token kosong",
+                   f"Jadwal posting Fanspage '{page.name}' dilewati karena Access Token-nya kosong.\n"
+                   "Isi ulang token di tab Fanspage, lalu klik Verifikasi.")
             return
 
         text_ai, image_ai = ai_backend(db, "text"), ai_backend(db, "image")
         for backend in (text_ai, image_ai):
             if backend["missing"]:
                 logger.warning(f"[Scheduler] {backend['label']} API key missing. Skipping auto-post.")
+                notify(db, f"no-ai-key:{backend['label']}", f"Autopilot berhenti: API key {backend['label']} kosong",
+                       f"Jadwal posting '{page.name}' dilewati: {backend['missing']}\n"
+                       "Isi API key di tab Pengaturan, lalu klik Uji Koneksi.")
                 return
 
         lang = page.content_language or DEFAULT_CONTENT_LANGUAGE
@@ -170,6 +180,11 @@ def auto_generate_and_post_job(page_row_id: int):
             logger.info(f"[Scheduler] '{page.name}' published: {fb_res.get('post_url')}")
         else:
             logger.error(f"[Scheduler] '{page.name}' publish failed: {fb_res.get('message')}")
+            notify(db, f"publish:{page.id}", f"Gagal posting ke '{page.name}'",
+                   f"Konten '{post.visual_title}' sudah dibuat, tetapi Facebook menolaknya.\n\n"
+                   f"Pesan Facebook: {fb_res.get('message')}\n\n"
+                   "Draft tersimpan dengan status Gagal; buka di Studio untuk mencoba publish lagi. "
+                   "Jika pesannya soal token atau izin, perbarui token di tab Fanspage.")
 
     except Exception as e:
         logger.error(f"[Scheduler] Error during auto-post job for page {page_row_id}: {e}")
@@ -177,6 +192,12 @@ def auto_generate_and_post_job(page_row_id: int):
         # A poster was rendered but never saved: remove it instead of leaking a file.
         if poster_sementara:
             remove_generated_image(poster_sementara)
+        page_name = page.name if page else f"#{page_row_id}"
+        notify(db, f"autopost:{page_row_id}", f"Autopilot gagal membuat konten untuk '{page_name}'",
+               f"Jadwal posting '{page_name}' gagal sebelum sampai ke Facebook.\n\n"
+               f"Error: {e}\n\n"
+               "Penyebab umum: saldo/kuota API AI habis, API key dicabut, atau layanan AI sedang gangguan. "
+               "Cek tab Pengaturan > Uji Koneksi.")
     finally:
         db.close()
 
@@ -191,6 +212,19 @@ def metrics_sync_job():
         pages = db.query(FacebookPage).filter(FacebookPage.is_active.isnot(False)).all()
         for page in pages:
             if not page.access_token:
+                continue
+            # Doubles as the daily token health check: a revoked or expired token
+            # would otherwise only surface when the next post fails.
+            check = verify_page_credentials(page.page_id, page.access_token)
+            if not check.get("success"):
+                logger.warning(f"[Scheduler] '{page.name}' token check failed: {check.get('message')}")
+                notify(db, f"token:{page.id}", f"Token Facebook '{page.name}' bermasalah",
+                       f"Pemeriksaan harian token Fanspage '{page.name}' gagal.\n\n"
+                       f"Pesan Facebook: {check.get('message')}\n\n"
+                       "Selama token ini bermasalah, posting otomatis ke Fanspage ini akan gagal. "
+                       "Buat token baru lalu tempel di tab Fanspage dan klik Verifikasi. "
+                       "(Token sering tidak berlaku setelah password Facebook diganti.)",
+                       cooldown_hours=20)
                 continue
             logger.info(f"[Scheduler] Syncing metrics for '{page.name}'...")
             update_all_post_metrics(db, page.page_id, page.access_token, page.id)
@@ -208,6 +242,8 @@ def metrics_sync_job():
     except Exception as e:
         logger.error(f"[Scheduler] Error during metrics sync: {e}")
         db.rollback()
+        notify(db, "metrics-sync", "Sinkron metrik malam gagal",
+               f"Sinkron metrik & pembelajaran topik malam ini gagal.\n\nError: {e}", cooldown_hours=20)
     finally:
         db.close()
 
@@ -231,9 +267,13 @@ def comment_reply_job():
                     logger.info(f"[Scheduler] '{page.name}' comments: {res.get('message')}")
             else:
                 logger.warning(f"[Scheduler] '{page.name}' comment reply skipped: {res.get('message')}")
+                notify(db, f"reply:{page.id}", f"Balas komentar otomatis '{page.name}' terhenti",
+                       f"Balasan komentar otomatis untuk '{page.name}' tidak berjalan.\n\n"
+                       f"Pesan: {res.get('message')}", cooldown_hours=12)
     except Exception as e:
         logger.error(f"[Scheduler] Error during comment reply job: {e}")
         db.rollback()
+        notify(db, "reply-job", "Balas komentar otomatis error", f"Error: {e}", cooldown_hours=12)
     finally:
         db.close()
 
@@ -307,8 +347,25 @@ def topic_evolution_job():
     except Exception as e:
         logger.error(f"[Scheduler] Error during topic evolution: {e}")
         db.rollback()
+        notify(db, "topic-evolution", "Evolusi topik mingguan gagal", f"Error: {e}", cooldown_hours=24)
     finally:
         db.close()
+
+
+def backup_job():
+    """Nightly database snapshot (see core/backup.py); mails an alert if it fails."""
+    try:
+        create_backup()
+    except Exception as e:
+        logger.error(f"[Scheduler] Database backup failed: {e}")
+        db = SessionLocal()
+        try:
+            notify(db, "backup", "Backup database gagal",
+                   f"Backup database malam ini gagal.\n\nError: {e}\n\n"
+                   "Data aplikasi masih utuh, tetapi belum ada salinan cadangan terbaru.",
+                   cooldown_hours=20)
+        finally:
+            db.close()
 
 
 def reload_autopost_schedule():
@@ -404,6 +461,7 @@ def get_schedule_status(enabled: bool = True) -> dict:
 CATCH_UP_DELAY_SECONDS = 60
 CATCH_UP_POST_HOURS = 3          # a post slot missed longer ago than this is skipped
 METRICS_STALE_HOURS = 26         # the nightly sync is overdue past this
+BACKUP_STALE_HOURS = 26          # likewise for the nightly backup
 LAST_METRICS_SYNC_KEY = "last_metrics_sync_at"
 STARTED_AT: datetime | None = None
 
@@ -467,6 +525,10 @@ def catch_up_job():
     finally:
         db.close()
 
+    backup_age = latest_backup_age_hours()
+    if backup_age is None or backup_age > BACKUP_STALE_HOURS:
+        logger.info("[Scheduler] Catch-up: no recent database backup. Making one now.")
+        backup_job()
     if overdue:
         logger.info("[Scheduler] Catch-up: nightly metric sync was missed. Running it now.")
         metrics_sync_job()
@@ -496,6 +558,17 @@ def start_scheduler():
         metrics_sync_job,
         CronTrigger(hour=3, minute=0, timezone=SCHEDULER_TZ),
         id='feedback_job',
+        replace_existing=True,
+        misfire_grace_time=3600,
+        coalesce=True,
+        max_instances=1,
+    )
+
+    # Nightly database backup at 03:30, after the metric sync has written its results.
+    scheduler.add_job(
+        backup_job,
+        CronTrigger(hour=3, minute=30, timezone=SCHEDULER_TZ),
+        id='backup_job',
         replace_existing=True,
         misfire_grace_time=3600,
         coalesce=True,

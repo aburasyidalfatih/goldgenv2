@@ -8,9 +8,13 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("AUTOPOSTER_DATA_DIR") or (BASE_DIR / "data"))
 STORAGE_DIR = Path(os.environ.get("AUTOPOSTER_STORAGE_DIR") or (BASE_DIR / "storage"))
 IMAGES_DIR = STORAGE_DIR / "generated_images"
+# Nightly database backups. Docker mounts its own volume here, so a damaged data
+# volume does not take the backups with it.
+BACKUP_DIR = Path(os.environ.get("AUTOPOSTER_BACKUP_DIR") or (BASE_DIR / "backups"))
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
 # SQLite Database Location (inside data/ for Dokploy persistent volume)
 DB_PATH = DATA_DIR / "autoposter.db"
@@ -76,6 +80,14 @@ DEFAULT_SETTINGS = {
     "auto_topic_evolution": "true",
     "topic_window_days": "7",
     "max_new_topics_per_cycle": "2",
+    # Email alerts (Gmail: smtp.gmail.com:587 + an App Password). An empty
+    # recipient falls back to the dashboard login's email.
+    "notify_email_enabled": "false",
+    "notify_email_to": "",
+    "smtp_host": "smtp.gmail.com",
+    "smtp_port": "587",
+    "smtp_user": "",
+    "smtp_password": "",
 }
 
 # Timezone used by the autopilot scheduler when reading auto_post_times
@@ -86,7 +98,7 @@ SCHEDULER_TIMEZONE = os.environ.get("SCHEDULER_TIMEZONE", "Asia/Jakarta")
 FB_GRAPH_API_VERSION = os.environ.get("FB_GRAPH_API_VERSION", "v25.0")
 
 # Setting keys that must never be sent back to the browser in cleartext.
-SENSITIVE_SETTING_KEYS = {"gemini_api_key", "openai_api_key", "fb_page_access_token"}
+SENSITIVE_SETTING_KEYS = {"gemini_api_key", "openai_api_key", "fb_page_access_token", "smtp_password"}
 
 # Placeholder returned instead of a stored secret. When the UI sends this value
 # back, the server keeps whatever is already in the database.

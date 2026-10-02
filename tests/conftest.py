@@ -16,6 +16,7 @@ from pathlib import Path
 TEST_ROOT = Path(tempfile.mkdtemp(prefix="autoposter_tests_"))
 os.environ["AUTOPOSTER_DATA_DIR"] = str(TEST_ROOT / "data")
 os.environ["AUTOPOSTER_STORAGE_DIR"] = str(TEST_ROOT / "storage")
+os.environ["AUTOPOSTER_BACKUP_DIR"] = str(TEST_ROOT / "backups")
 
 # Import the app package from the project root, not from tests/
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))

@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
@@ -55,6 +55,8 @@ from core.topic_evolution import evolve_topics, retire_topic, reactivate_topic
 from core import comment_reply
 from core import auth
 from core.poster_style import THEMES
+from core import notifier
+from core.backup import BACKUP_KEEP_DAYS, backup_path, create_backup, list_backups
 from core.pages import (
     list_pages,
     get_page,
@@ -1191,6 +1193,48 @@ def get_post(post_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Postingan tidak ditemukan.")
     page_names = {p.id: p.name for p in list_page_rows(db)}
     return serialize_post(post, page_names, full=True)
+
+# ==========================================
+# REST API: EMAIL ALERTS & DATABASE BACKUPS
+# ==========================================
+@app.get("/api/notifications")
+def notification_info(db: Session = Depends(get_db)):
+    return {"recipient": notifier.recipient(db)}
+
+
+@app.post("/api/notifications/test")
+def send_test_email(db: Session = Depends(get_db)):
+    """Sends a test message with the saved settings (the UI saves first)."""
+    return notifier.send_email(
+        db, "Email uji notifikasi",
+        "Notifikasi email berhasil diatur.\n\n"
+        "Mulai sekarang Anda akan menerima email jika: posting otomatis gagal, token Facebook "
+        "bermasalah, API key AI habis/ditolak, balas komentar otomatis terhenti, atau backup gagal.",
+    )
+
+
+@app.get("/api/backups")
+def get_backups():
+    return {"items": list_backups(), "keep_days": BACKUP_KEEP_DAYS}
+
+
+@app.post("/api/backups")
+def make_backup():
+    try:
+        made = create_backup()
+    except Exception as e:
+        logger.error(f"Manual backup failed: {e}")
+        return {"success": False, "message": f"Backup gagal: {e}"}
+    return {"success": True, "message": "Backup database berhasil dibuat.", "backup": made}
+
+
+@app.get("/api/backups/{name}")
+def download_backup(name: str):
+    path = backup_path(name)
+    if not path:
+        raise HTTPException(status_code=404, detail="Backup tidak ditemukan.")
+    return FileResponse(path, media_type="application/gzip", filename=name)
+
 
 # ==========================================
 # REST API: COMMENT AUTO-REPLY
