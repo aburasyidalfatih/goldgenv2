@@ -3,6 +3,7 @@ import requests
 import logging
 from datetime import datetime, timedelta, timezone
 from config import FB_GRAPH_API_VERSION
+from core.utils import redact_secrets
 
 logger = logging.getLogger(__name__)
 
@@ -91,10 +92,10 @@ def test_facebook_credentials(page_id: str, access_token: str) -> dict:
         }
 
     except Exception as e:
-        logger.error(f"Error testing Facebook credentials: {e}")
+        logger.error(f"Error testing Facebook credentials: {redact_secrets(e)}")
         return {
             "success": False,
-            "message": f"Koneksi ke Facebook API gagal: {str(e)}"
+            "message": f"Koneksi ke Facebook API gagal: {redact_secrets(e)}"
         }
 
 def _page_token_from_accounts(user_token: str, page_id) -> str | None:
@@ -160,8 +161,8 @@ def publish_photo_to_page(page_id: str, access_token: str, image_path: str, capt
         }
 
     except Exception as e:
-        logger.error(f"Failed to publish photo to Facebook: {e}")
-        return {"success": False, "message": str(e)}
+        logger.error(f"Failed to publish photo to Facebook: {redact_secrets(e)}")
+        return {"success": False, "message": redact_secrets(e)}
 
 # (metrics requested, metric used as reach, metric used as total views), newest first.
 class MetricsUnavailable(Exception):
@@ -205,7 +206,7 @@ def fetch_post_metrics(page_id: str, access_token: str, fb_post_id: str) -> dict
         r = requests.get(url, params=params, timeout=10)
         data = r.json()
     except Exception as e:
-        raise MetricsUnavailable(f"Error fetching Layer 1 metrics: {e}") from e
+        raise MetricsUnavailable(f"Error fetching Layer 1 metrics: {redact_secrets(e)}") from e
     if "error" in data:
         raise MetricsUnavailable(f"Facebook Error: {data['error'].get('message')}")
     if "reactions" in data and "summary" in data["reactions"]:
@@ -226,7 +227,7 @@ def fetch_post_metrics(page_id: str, access_token: str, fb_post_id: str) -> dict
                              timeout=10)
             insights_data = r.json()
         except Exception as e:
-            logger.warning(f"Error fetching Layer 2 insights: {e}")
+            logger.warning(f"Error fetching Layer 2 insights: {redact_secrets(e)}")
             break
         if "error" in insights_data:
             logger.warning(f"Insights '{metric_names}' unavailable for {fb_post_id}: "
@@ -284,8 +285,8 @@ def fetch_recent_comments(page_id: str, access_token: str, since_days: int = 14,
         )
         data = resp.json()
     except Exception as e:
-        logger.error(f"Failed to fetch comments for page {page_id}: {e}")
-        return {"success": False, "message": f"Koneksi ke Facebook gagal: {e}"}
+        logger.error(f"Failed to fetch comments for page {page_id}: {redact_secrets(e)}")
+        return {"success": False, "message": f"Koneksi ke Facebook gagal: {redact_secrets(e)}"}
 
     if "error" in data:
         return {"success": False, "message": _graph_error(data)}
@@ -302,8 +303,9 @@ def reply_to_comment(comment_id: str, access_token: str, message: str) -> dict:
         )
         data = resp.json()
     except Exception as e:
-        logger.error(f"Failed to reply to comment {comment_id}: {e}")
-        return {"success": False, "message": f"Koneksi ke Facebook gagal: {e}", "uncertain": True}
+        logger.error(f"Failed to reply to comment {comment_id}: {redact_secrets(e)}")
+        return {"success": False, "message": f"Koneksi ke Facebook gagal: {redact_secrets(e)}",
+                "uncertain": True}
 
     if "error" in data:
         err = data["error"]

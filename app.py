@@ -31,7 +31,7 @@ from database.db_session import engine, Base, get_db, SessionLocal
 from database.migrations import run_migrations, migrate_single_page_to_multi
 from database.models import AppSetting, ContentTopic, Post, FacebookPage, PageTopicWeight, CommentReply
 from core.taxonomy import seed_base_curriculum
-from core.utils import iso_utc
+from core.utils import iso_utc, RedactSecretsFilter
 from core.maintenance import remove_generated_image, cleanup_orphan_images
 from core.gemini_client import test_gemini_key, generate_post_content, template_content
 from core.openai_client import test_openai_key
@@ -76,6 +76,8 @@ from scheduler import (
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+for _handler in logging.getLogger().handlers:
+    _handler.addFilter(RedactSecretsFilter())   # tokens never reach the container logs
 logger = logging.getLogger("AutoPosterApp")
 
 def bootstrap_first_user(db: Session):

@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from core.ai_provider import ai_backend, complete_json
 from config import DEFAULT_CONTENT_LANGUAGE
 from core.fb_client import fetch_recent_comments, reply_to_comment
-from core.utils import iso_utc
+from core.utils import iso_utc, redact_secrets
 from database.models import CommentReply, FacebookPage
 
 logger = logging.getLogger(__name__)
@@ -240,6 +240,7 @@ def process_page_comments(db: Session, page: FacebookPage, mode: str | None = No
     summary = {"success": True, "replied": 0, "drafted": 0, "skipped": 0, "failed": 0, "message": ""}
 
     def finish(error: str | None = None) -> dict:
+        error = redact_secrets(error) if error else error
         page.reply_last_run = now
         page.reply_last_error = error
         db.commit()

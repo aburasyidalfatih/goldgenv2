@@ -17,6 +17,7 @@ from email.message import EmailMessage
 from zoneinfo import ZoneInfo
 
 from config import SCHEDULER_TIMEZONE
+from core.utils import redact_secrets
 from database.models import AppSetting, User
 
 logger = logging.getLogger(__name__)
@@ -74,6 +75,8 @@ def send_email(db, subject: str, body: str) -> dict:
     if missing:
         return {"success": False, "message": f"Notifikasi email belum lengkap: {', '.join(missing)} belum diisi."}
 
+    # Error texts can quote a request URL with its access token; never mail it.
+    subject, body = redact_secrets(subject), redact_secrets(body)
     msg = EmailMessage()
     msg["Subject"] = f"[{APP_NAME}] {subject}"
     msg["From"] = f"{APP_NAME} <{cfg['user']}>"
