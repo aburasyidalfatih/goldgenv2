@@ -47,6 +47,11 @@ AUTOPOST_JOB_PREFIX = "autopost_"
 # A posting slot may still run this late (also the cron jobs' misfire_grace_time).
 AUTOPOST_GRACE_SECONDS = 3600
 COMMENT_REPLY_INTERVAL_MINUTES = 10
+# One failed comment-reply run is usually a passing Facebook or AI hiccup that the
+# next run (10 minutes later) gets past. Only mail when it keeps failing this long.
+REPLY_ALERT_AFTER_MINUTES = 30
+# page id (or "job") -> when its current streak of failed runs began
+_reply_failing_since: dict = {}
 
 def get_setting_val(db, key, default=""):
     s = db.query(AppSetting).filter(AppSetting.key == key).first()
@@ -279,19 +284,38 @@ def comment_reply_job():
                 continue
             res = process_page_comments(db, page, gap=True)
             if res.get("success"):
+                _reply_failing_since.pop(page.id, None)
                 if res.get("replied") or res.get("drafted"):
                     logger.info(f"[Scheduler] '{page.name}' comments: {res.get('message')}")
             else:
                 logger.warning(f"[Scheduler] '{page.name}' comment reply skipped: {res.get('message')}")
-                notify(db, f"reply:{page.id}", f"Balas komentar otomatis '{page.name}' terhenti",
-                       f"Balasan komentar otomatis untuk '{page.name}' tidak berjalan.\n\n"
-                       f"Pesan: {res.get('message')}", cooldown_hours=12)
+                minutes = _reply_failure_minutes(page.id)
+                if minutes is not None:
+                    notify(db, f"reply:{page.id}", f"Balas komentar otomatis '{page.name}' terhenti",
+                           f"Balasan komentar otomatis untuk '{page.name}' gagal terus selama "
+                           f"{minutes} menit terakhir.\n\nPesan: {res.get('message')}", cooldown_hours=12)
+        _reply_failing_since.pop("job", None)
     except Exception as e:
         logger.error(f"[Scheduler] Error during comment reply job: {e}")
         db.rollback()
-        notify(db, "reply-job", "Balas komentar otomatis error", f"Error: {e}", cooldown_hours=12)
+        minutes = _reply_failure_minutes("job")
+        if minutes is not None:
+            notify(db, "reply-job", "Balas komentar otomatis error",
+                   f"Pemeriksaan komentar error terus selama {minutes} menit terakhir.\n\nError: {e}",
+                   cooldown_hours=12)
     finally:
         db.close()
+
+
+def _reply_failure_minutes(key, now: datetime | None = None) -> int | None:
+    """
+    Records a failed run for `key`. Returns how long it has been failing once that
+    reaches REPLY_ALERT_AFTER_MINUTES (time to alert), else None.
+    """
+    now = now or datetime.now(timezone.utc)
+    since = _reply_failing_since.setdefault(key, now)
+    minutes = int((now - since).total_seconds() // 60)
+    return minutes if minutes >= REPLY_ALERT_AFTER_MINUTES else None
 
 
 def stock_focus_variants(db) -> dict:

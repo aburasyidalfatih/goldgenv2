@@ -169,3 +169,34 @@ def test_catch_up_makes_a_backup_when_none_is_recent(client, monkeypatch):
     monkeypatch.setattr(scheduler_module, "missed_post_pages", lambda db, started: [])
     scheduler_module.catch_up_job()
     assert len(backup.list_backups()) == 1
+
+
+def test_satu_putaran_balas_komentar_gagal_tidak_mengirim_email(client, make_page, outbox, db, monkeypatch):
+    """Regresi: satu gangguan sesaat (Facebook/AI) dulu langsung mengirim email
+    'tidak berjalan', padahal putaran 10 menit berikutnya berhasil."""
+    page = make_page("111")
+    client.patch(f"/api/pages/{page['id']}", json={"auto_reply_enabled": True})
+    hasil = {"success": False, "message": "(#2) Service temporarily unavailable"}
+    monkeypatch.setattr(scheduler_module, "process_page_comments", lambda db, p, gap=False: dict(hasil))
+    jam = {"t": datetime(2026, 10, 4, 1, 0, tzinfo=timezone.utc)}
+    asli = scheduler_module._reply_failure_minutes
+    monkeypatch.setattr(scheduler_module, "_reply_failure_minutes", lambda key: asli(key, jam["t"]))
+    scheduler_module._reply_failing_since.clear()
+
+    scheduler_module.comment_reply_job()                 # gagal sekali
+    jam["t"] += timedelta(minutes=10)
+    hasil.update(success=True, message="ok")
+    scheduler_module.comment_reply_job()                 # pulih
+    assert outbox == []
+
+    hasil.update(success=False, message="(#2) Service temporarily unavailable")
+    for _ in range(3):                                   # gagal terus 30 menit
+        jam["t"] += timedelta(minutes=10)
+        scheduler_module.comment_reply_job()
+    assert len(outbox) == 0
+    jam["t"] += timedelta(minutes=10)
+    scheduler_module.comment_reply_job()
+
+    assert len(outbox) == 1 and "terhenti" in outbox[0]["subject"]
+    assert "30 menit" in outbox[0]["body"]
+    scheduler_module._reply_failing_since.clear()
