@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from config import (
     SCHEDULER_TIMEZONE,
@@ -16,7 +17,10 @@ from core.feedback_loop import (
     get_next_recommended_topic,
     update_all_post_metrics,
     optimize_all_pages,
+    optimize_topic_weights,
     mark_topic_used,
+    learning_phase,
+    focus_winners,
 )
 from core.topic_evolution import evolve_topics
 from core.maintenance import remove_generated_image, cleanup_orphan_images
@@ -25,6 +29,9 @@ from core.comment_reply import process_page_comments
 from core.gemini_client import generate_post_content
 from core.imagen_client import generate_poster_image
 from core.fb_client import publish_photo_to_page
+from core.pages import verify_page_credentials
+from core.notifier import notify
+from core.backup import create_backup, latest_backup_age_hours
 
 logger = logging.getLogger(__name__)
 
@@ -37,16 +44,19 @@ except Exception:
 scheduler = BackgroundScheduler(timezone=SCHEDULER_TZ)
 
 AUTOPOST_JOB_PREFIX = "autopost_"
-CATCHUP_JOB_PREFIX = "catchup_"
 # A posting slot may still run this late (also the cron jobs' misfire_grace_time).
 AUTOPOST_GRACE_SECONDS = 3600
-# Delay before a catch-up post after startup, so a restart loop cannot burst.
-CATCHUP_DELAY_SECONDS = 60
 COMMENT_REPLY_INTERVAL_MINUTES = 10
 
 def get_setting_val(db, key, default=""):
     s = db.query(AppSetting).filter(AppSetting.key == key).first()
     return s.value if s and s.value else default
+
+def _set_setting(db, key, value: str):
+    row = db.query(AppSetting).filter(AppSetting.key == key).first() or AppSetting(key=key)
+    row.value = value
+    db.add(row)
+    db.commit()
 
 def _int_setting(db, key, default, lo, hi):
     try:
@@ -83,6 +93,7 @@ def auto_generate_and_post_job(page_row_id: int):
     """
     db = SessionLocal()
     poster_sementara = None
+    page = None
     try:
         page = db.query(FacebookPage).filter(FacebookPage.id == page_row_id).first()
         if not page:
@@ -93,12 +104,18 @@ def auto_generate_and_post_job(page_row_id: int):
             return
         if not page.access_token:
             logger.warning(f"[Scheduler] '{page.name}' has no access token. Skipping.")
+            notify(db, f"no-token:{page.id}", f"Autopilot '{page.name}' berhenti: token kosong",
+                   f"Jadwal posting Fanspage '{page.name}' dilewati karena Access Token-nya kosong.\n"
+                   "Isi ulang token di tab Fanspage, lalu klik Verifikasi.")
             return
 
         text_ai, image_ai = ai_backend(db, "text"), ai_backend(db, "image")
         for backend in (text_ai, image_ai):
             if backend["missing"]:
                 logger.warning(f"[Scheduler] {backend['label']} API key missing. Skipping auto-post.")
+                notify(db, f"no-ai-key:{backend['label']}", f"Autopilot berhenti: API key {backend['label']} kosong",
+                       f"Jadwal posting '{page.name}' dilewati: {backend['missing']}\n"
+                       "Isi API key di tab Pengaturan, lalu klik Uji Koneksi.")
                 return
 
         lang = page.content_language or DEFAULT_CONTENT_LANGUAGE
@@ -117,7 +134,8 @@ def auto_generate_and_post_job(page_row_id: int):
 
         # 2. Generate copy & prompt
         content = generate_post_content(text_ai["api_key"], topic_dict, language=lang,
-                                        model_name=text_ai["model"], provider=text_ai["provider"])
+                                        model_name=text_ai["model"], provider=text_ai["provider"],
+                                        reasoning=text_ai["reasoning"])
 
         # 3. Render the poster
         filename, abspath = generate_poster_image(
@@ -126,6 +144,9 @@ def auto_generate_and_post_job(page_row_id: int):
             aspect_ratio=aspect_ratio,
             model_name=image_ai["model"],
             provider=image_ai["provider"],
+            quality=image_ai["quality"],
+            theme=page.color_theme if page else None,
+            watermark=page.name if page else None,
         )
         poster_sementara = abspath
 
@@ -175,6 +196,11 @@ def auto_generate_and_post_job(page_row_id: int):
             logger.info(f"[Scheduler] '{page.name}' published: {fb_res.get('post_url')}")
         else:
             logger.error(f"[Scheduler] '{page.name}' publish failed: {fb_res.get('message')}")
+            notify(db, f"publish:{page.id}", f"Gagal posting ke '{page.name}'",
+                   f"Konten '{post.visual_title}' sudah dibuat, tetapi Facebook menolaknya.\n\n"
+                   f"Pesan Facebook: {fb_res.get('message')}\n\n"
+                   "Draft tersimpan dengan status Gagal; buka di Studio untuk mencoba publish lagi. "
+                   "Jika pesannya soal token atau izin, perbarui token di tab Fanspage.")
 
     except Exception as e:
         logger.error(f"[Scheduler] Error during auto-post job for page {page_row_id}: {e}")
@@ -182,6 +208,12 @@ def auto_generate_and_post_job(page_row_id: int):
         # A poster was rendered but never saved: remove it instead of leaking a file.
         if poster_sementara:
             remove_generated_image(poster_sementara)
+        page_name = page.name if page else f"#{page_row_id}"
+        notify(db, f"autopost:{page_row_id}", f"Autopilot gagal membuat konten untuk '{page_name}'",
+               f"Jadwal posting '{page_name}' gagal sebelum sampai ke Facebook.\n\n"
+               f"Error: {e}\n\n"
+               "Penyebab umum: saldo/kuota API AI habis, API key dicabut, atau layanan AI sedang gangguan. "
+               "Cek tab Pengaturan > Uji Koneksi.")
     finally:
         db.close()
 
@@ -197,6 +229,19 @@ def metrics_sync_job():
         for page in pages:
             if not page.access_token:
                 continue
+            # Doubles as the daily token health check: a revoked or expired token
+            # would otherwise only surface when the next post fails.
+            check = verify_page_credentials(page.page_id, page.access_token)
+            if not check.get("success"):
+                logger.warning(f"[Scheduler] '{page.name}' token check failed: {check.get('message')}")
+                notify(db, f"token:{page.id}", f"Token Facebook '{page.name}' bermasalah",
+                       f"Pemeriksaan harian token Fanspage '{page.name}' gagal.\n\n"
+                       f"Pesan Facebook: {check.get('message')}\n\n"
+                       "Selama token ini bermasalah, posting otomatis ke Fanspage ini akan gagal. "
+                       "Buat token baru lalu tempel di tab Fanspage dan klik Verifikasi. "
+                       "(Token sering tidak berlaku setelah password Facebook diganti.)",
+                       cooldown_hours=20)
+                continue
             logger.info(f"[Scheduler] Syncing metrics for '{page.name}'...")
             update_all_post_metrics(db, page.page_id, page.access_token, page.id)
 
@@ -205,11 +250,16 @@ def metrics_sync_job():
         for entry in res.get("pages", []):
             logger.info(f"[Scheduler] '{entry['page_name']}' top topic: {entry['winning_topic']}")
 
+        stock_focus_variants(db)
+        _set_setting(db, LAST_METRICS_SYNC_KEY, datetime.now(timezone.utc).isoformat())
+
         # Sweep poster files left behind by failed generations.
         cleanup_orphan_images(db)
     except Exception as e:
         logger.error(f"[Scheduler] Error during metrics sync: {e}")
         db.rollback()
+        notify(db, "metrics-sync", "Sinkron metrik malam gagal",
+               f"Sinkron metrik & pembelajaran topik malam ini gagal.\n\nError: {e}", cooldown_hours=20)
     finally:
         db.close()
 
@@ -233,58 +283,105 @@ def comment_reply_job():
                     logger.info(f"[Scheduler] '{page.name}' comments: {res.get('message')}")
             else:
                 logger.warning(f"[Scheduler] '{page.name}' comment reply skipped: {res.get('message')}")
+                notify(db, f"reply:{page.id}", f"Balas komentar otomatis '{page.name}' terhenti",
+                       f"Balasan komentar otomatis untuk '{page.name}' tidak berjalan.\n\n"
+                       f"Pesan: {res.get('message')}", cooldown_hours=12)
     except Exception as e:
         logger.error(f"[Scheduler] Error during comment reply job: {e}")
         db.rollback()
+        notify(db, "reply-job", "Balas komentar otomatis error", f"Error: {e}", cooldown_hours=12)
     finally:
         db.close()
 
 
-def topic_evolution_job():
+def stock_focus_variants(db) -> dict:
     """
-    Weekly: every page grows new topics from ITS OWN winners. New topics land in
-    the shared catalog, so a discovery on one page can benefit the others.
+    Keeps every winner in each page's focus rotation supplied with fresh variants.
+
+    For a page that has tested and measured every base topic, any of its top
+    winners with no unposted variant left gets new close variants grown from it,
+    so the rotation #1 -> #2 -> #3 always has "something like the winner" to post.
+    The first run after a page finishes its test phase is what grows its very
+    first variants. Returns {page_id: [titles created]}.
     """
-    db = SessionLocal()
-    try:
-        if get_setting_val(db, "auto_topic_evolution", "true").lower() != "true":
-            logger.info("[Scheduler] Topic evolution disabled. Skipping.")
-            return
+    if get_setting_val(db, "auto_topic_evolution", "true").lower() != "true":
+        logger.info("[Scheduler] Topic evolution disabled. Skipping variant stocking.")
+        return {}
+    text_ai = ai_backend(db, "text")
+    if text_ai["missing"]:
+        logger.warning(f"[Scheduler] No {text_ai['label']} key. Skipping variant stocking.")
+        return {}
+    window_days = _int_setting(db, "topic_window_days", 7, 1, 90)
+    max_new = _int_setting(db, "max_new_topics_per_cycle", 2, 1, 5)
 
-        text_ai = ai_backend(db, "text")
-        if text_ai["missing"]:
-            logger.warning(f"[Scheduler] No {text_ai['label']} key. Skipping topic evolution.")
-            return
-
-        window_days = _int_setting(db, "topic_window_days", 7, 1, 90)
-        max_new = _int_setting(db, "max_new_topics_per_cycle", 2, 1, 5)
-
-        # Metrics were already refreshed by the 03:00 sync job an hour ago, so this
-        # job reads them instead of hitting the Graph API for every post again.
-        pages = db.query(FacebookPage).filter(FacebookPage.is_active.isnot(False)).all()
-        for page in pages:
+    created = {}
+    for page in db.query(FacebookPage).filter(FacebookPage.is_active.isnot(False)).all():
+        phase = learning_phase(db, page.id)
+        if not phase["ready_for_variants"]:
+            logger.info(f"[Scheduler] '{page.name}' not ready for variants: {phase['phase']} phase, "
+                        f"{phase['tested']}/{phase['total']} tested, {phase['pending']} awaiting metrics.")
+            continue
+        winners = focus_winners(db, page.id)
+        leaders = [w["leader"].id for w in winners]
+        for rank, winner in enumerate(winners, start=1):
+            if winner["fresh_variants"]:
+                continue
+            others = [i for i in leaders if i != winner["leader"].id]
             res = evolve_topics(
                 db=db,
                 api_key=text_ai["api_key"],
                 model_name=text_ai["model"],
                 provider=text_ai["provider"],
+                reasoning=text_ai["reasoning"],
                 window_days=window_days,
                 max_new=max_new,
                 language=page.content_language or DEFAULT_CONTENT_LANGUAGE,
                 page_id=page.id,
+                winner_ids=[winner["leader"].id] + others,
             )
             if res.get("success"):
-                titles = ", ".join(t["title"] for t in res.get("created", []))
-                logger.info(f"[Scheduler] '{page.name}' grew new topics: {titles}")
+                titles = [t["title"] for t in res.get("created", [])]
+                created.setdefault(page.id, []).extend(titles)
+                logger.info(f"[Scheduler] '{page.name}' winner #{rank} '{winner['leader'].title}' "
+                            f"got variants: {', '.join(titles)}")
             else:
-                logger.info(f"[Scheduler] '{page.name}' evolution skipped: {res.get('message')}")
+                logger.info(f"[Scheduler] '{page.name}' winner #{rank} variants skipped: {res.get('message')}")
+        if page.id in created:
+            optimize_topic_weights(db, window_days, page.id)   # variants take their winner's weight
+    return created
 
-        optimize_all_pages(db, window_days)
+
+def topic_evolution_job():
+    """
+    Weekly safety net for the nightly stocking: makes sure every page in its focus
+    phase has fresh variants of each of its top winners, then refreshes weights.
+    """
+    db = SessionLocal()
+    try:
+        stock_focus_variants(db)
+        optimize_all_pages(db, _int_setting(db, "topic_window_days", 7, 1, 90))
     except Exception as e:
         logger.error(f"[Scheduler] Error during topic evolution: {e}")
         db.rollback()
+        notify(db, "topic-evolution", "Evolusi topik mingguan gagal", f"Error: {e}", cooldown_hours=24)
     finally:
         db.close()
+
+
+def backup_job():
+    """Nightly database snapshot (see core/backup.py); mails an alert if it fails."""
+    try:
+        create_backup()
+    except Exception as e:
+        logger.error(f"[Scheduler] Database backup failed: {e}")
+        db = SessionLocal()
+        try:
+            notify(db, "backup", "Backup database gagal",
+                   f"Backup database malam ini gagal.\n\nError: {e}\n\n"
+                   "Data aplikasi masih utuh, tetapi belum ada salinan cadangan terbaru.",
+                   cooldown_hours=20)
+        finally:
+            db.close()
 
 
 # Page edits arrive on several request threads at once; two interleaved rebuilds
@@ -348,54 +445,6 @@ def _reload_autopost_schedule():
     return scheduled
 
 
-def schedule_missed_autoposts(now: datetime | None = None) -> list[int]:
-    """
-    The cron jobs live in memory, so a slot that passed while the app was down
-    (restart, redeploy, server reboot) would be skipped until the next one. At
-    startup, run each page's most recent slot once if it passed within the grace
-    window and the page has produced no post since.
-    """
-    now = (now or datetime.now(SCHEDULER_TZ)).astimezone(SCHEDULER_TZ)
-    db = SessionLocal()
-    queued = []
-    try:
-        pages = db.query(FacebookPage).filter(FacebookPage.is_active.isnot(False)).all()
-        for page in pages:
-            if not (page.autopilot_enabled and page.access_token):
-                continue
-            times = parse_post_times(page.auto_post_times) or parse_post_times(DEFAULT_SETTINGS["auto_post_times"])
-            missed = None
-            for hour, minute in times:
-                slot = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-                if slot > now:
-                    slot -= timedelta(days=1)
-                if (now - slot).total_seconds() <= AUTOPOST_GRACE_SECONDS and (missed is None or slot > missed):
-                    missed = slot
-            if missed is None:
-                continue
-            # Timestamps are stored as naive UTC.
-            missed_utc = missed.astimezone(timezone.utc).replace(tzinfo=None)
-            if page.created_at and page.created_at > missed_utc:
-                continue   # the page did not exist yet at that slot
-            if db.query(Post).filter(Post.page_id == page.id, Post.created_at >= missed_utc).first():
-                continue   # the slot did run
-            scheduler.add_job(
-                auto_generate_and_post_job,
-                "date",
-                run_date=now + timedelta(seconds=CATCHUP_DELAY_SECONDS),
-                args=[page.id],
-                id=f"{CATCHUP_JOB_PREFIX}{page.id}",
-                replace_existing=True,
-                misfire_grace_time=AUTOPOST_GRACE_SECONDS,
-            )
-            queued.append(page.id)
-            logger.warning(f"[Scheduler] '{page.name}' missed its {missed:%H:%M} post while the app was down; "
-                           f"posting it in {CATCHUP_DELAY_SECONDS}s.")
-    finally:
-        db.close()
-    return queued
-
-
 def get_schedule_status(enabled: bool = True) -> dict:
     """
     Reports what the autopilot will do next, per page, so the UI can show exact
@@ -432,17 +481,120 @@ def get_schedule_status(enabled: bool = True) -> dict:
     }
 
 
+# Jobs live in memory and are rebuilt from "now" at startup, so whatever fell due
+# while the app was down (a VPS reboot, a redeploy) would silently never happen.
+# Shortly after startup, catch_up_job runs what was missed.
+CATCH_UP_DELAY_SECONDS = 60
+CATCH_UP_POST_HOURS = 3          # a post slot missed longer ago than this is skipped
+METRICS_STALE_HOURS = 26         # the nightly sync is overdue past this
+BACKUP_STALE_HOURS = 26          # likewise for the nightly backup
+LAST_METRICS_SYNC_KEY = "last_metrics_sync_at"
+STARTED_AT: datetime | None = None
+
+
+def _latest_slot_before(moment: datetime, times: list) -> datetime | None:
+    """The most recent posting slot at or before `moment` (today or yesterday)."""
+    slots = []
+    for hour, minute in times:
+        for days_back in (0, 1):
+            slot = (moment - timedelta(days=days_back)).replace(hour=hour, minute=minute,
+                                                                 second=0, microsecond=0)
+            if slot <= moment:
+                slots.append(slot)
+    return max(slots) if slots else None
+
+
+def missed_post_pages(db, started_at: datetime, now: datetime | None = None) -> list:
+    """
+    Autopilot pages whose latest slot fell while the app was down: before this
+    process started, within CATCH_UP_POST_HOURS, and with no post created for the
+    page since. Only the latest slot is caught up, so a long outage never fires a
+    burst of posts; slots after startup belong to the live scheduler.
+    """
+    now = (now or datetime.now(timezone.utc)).astimezone(SCHEDULER_TZ)
+    started = started_at.astimezone(SCHEDULER_TZ)
+    due = []
+    pages = db.query(FacebookPage).filter(FacebookPage.is_active.isnot(False),
+                                          FacebookPage.autopilot_enabled.is_(True)).all()
+    for page in pages:
+        if not page.access_token:
+            continue
+        slot = _latest_slot_before(started, parse_post_times(page.auto_post_times))
+        if slot is None or now - slot > timedelta(hours=CATCH_UP_POST_HOURS):
+            continue
+        slot_utc = slot.astimezone(timezone.utc).replace(tzinfo=None)
+        produced = db.query(Post.id).filter(Post.page_id == page.id, Post.created_at >= slot_utc).first()
+        if not produced:
+            due.append(page.id)
+    return due
+
+
+def metrics_sync_overdue(db, now: datetime | None = None) -> bool:
+    raw = get_setting_val(db, LAST_METRICS_SYNC_KEY)
+    if not raw:
+        return True
+    try:
+        last = datetime.fromisoformat(raw)
+    except ValueError:
+        return True
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    return (now or datetime.now(timezone.utc)) - last > timedelta(hours=METRICS_STALE_HOURS)
+
+
+def catch_up_job():
+    """Runs, once after startup, the metric sync and post slots missed during downtime."""
+    db = SessionLocal()
+    try:
+        overdue = metrics_sync_overdue(db)
+        pages_due = missed_post_pages(db, STARTED_AT or datetime.now(timezone.utc))
+    finally:
+        db.close()
+
+    backup_age = latest_backup_age_hours()
+    if backup_age is None or backup_age > BACKUP_STALE_HOURS:
+        logger.info("[Scheduler] Catch-up: no recent database backup. Making one now.")
+        backup_job()
+    if overdue:
+        logger.info("[Scheduler] Catch-up: nightly metric sync was missed. Running it now.")
+        metrics_sync_job()
+    for page_row_id in pages_due:
+        logger.info(f"[Scheduler] Catch-up: page {page_row_id} missed its posting slot while offline.")
+        auto_generate_and_post_job(page_row_id)
+
+
 def start_scheduler():
+    global STARTED_AT
     if scheduler.running:
         return
 
+    STARTED_AT = datetime.now(timezone.utc)
     reload_autopost_schedule()
+
+    scheduler.add_job(
+        catch_up_job,
+        DateTrigger(run_date=STARTED_AT + timedelta(seconds=CATCH_UP_DELAY_SECONDS)),
+        id='catch_up_job',
+        replace_existing=True,
+        misfire_grace_time=600,
+    )
 
     # Daily metric sync at 03:00 local time, well after the last post of the day.
     scheduler.add_job(
         metrics_sync_job,
         CronTrigger(hour=3, minute=0, timezone=SCHEDULER_TZ),
         id='feedback_job',
+        replace_existing=True,
+        misfire_grace_time=3600,
+        coalesce=True,
+        max_instances=1,
+    )
+
+    # Nightly database backup at 03:30, after the metric sync has written its results.
+    scheduler.add_job(
+        backup_job,
+        CronTrigger(hour=3, minute=30, timezone=SCHEDULER_TZ),
+        id='backup_job',
         replace_existing=True,
         misfire_grace_time=3600,
         coalesce=True,
@@ -470,5 +622,4 @@ def start_scheduler():
         max_instances=1,
     )
     scheduler.start()
-    schedule_missed_autoposts()
     logger.info("Background scheduler started successfully.")

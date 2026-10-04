@@ -16,6 +16,7 @@ from pathlib import Path
 TEST_ROOT = Path(tempfile.mkdtemp(prefix="autoposter_tests_"))
 os.environ["AUTOPOSTER_DATA_DIR"] = str(TEST_ROOT / "data")
 os.environ["AUTOPOSTER_STORAGE_DIR"] = str(TEST_ROOT / "storage")
+os.environ["AUTOPOSTER_BACKUP_DIR"] = str(TEST_ROOT / "backups")
 
 # Import the app package from the project root, not from tests/
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -135,7 +136,7 @@ def _reset_state():
         session.close()
 
     for job in list(scheduler.get_jobs()):
-        if job.id.startswith(("autopost_", "catchup_")):
+        if job.id.startswith("autopost_") or job.id == "catch_up_job":
             scheduler.remove_job(job.id)
 
 
@@ -206,7 +207,7 @@ def fake_gemini(monkeypatch):
     """Content generation stand-in, so no API key or quota is needed."""
     state = {"calls": [], "ratios": []}
 
-    def generate_content(api_key, topic_dict, language="id", model_name="", provider="gemini"):
+    def generate_content(api_key, topic_dict, language="id", model_name="", provider="gemini", **kwargs):
         state["calls"].append({"topic": topic_dict["title"], "language": language,
                                "provider": provider, "api_key": api_key, "model": model_name})
         # Unique per call: two generations can pick the same topic, and tests that
@@ -219,8 +220,9 @@ def fake_gemini(monkeypatch):
             "caption": f"caption #{n} {language} untuk {topic_dict['title']}",
         }
 
-    def generate_image(api_key, prompt, aspect_ratio="3:4", model_name="", provider="gemini"):
+    def generate_image(api_key, prompt, aspect_ratio="3:4", model_name="", provider="gemini", **kwargs):
         state["ratios"].append(aspect_ratio)
+        state.setdefault("image_kwargs", []).append(kwargs)
         state.setdefault("images", []).append({"provider": provider, "api_key": api_key,
                                                "model": model_name})
         filename = f"test_poster_{uuid.uuid4().hex[:8]}.jpg"
@@ -316,3 +318,17 @@ def with_gemini_key(db):
     yield
     setting.value = ""
     db.commit()
+
+
+@pytest.fixture
+def finish_test_phase(make_post, topics):
+    """
+    Publishes every base topic once on a page, old enough to be measured, so the
+    page leaves the test phase and enters the focus phase.
+    """
+    def _finish(page_row_id, reach=1000, days_ago=20, skip=()):
+        for topic in topics:
+            if topic.source == "seed" and topic.id not in skip:
+                make_post(page_row_id, topic, days_ago=days_ago, reach=reach)
+
+    return _finish

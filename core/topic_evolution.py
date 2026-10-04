@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from config import DEFAULT_TEXT_MODEL, DEFAULT_CONTENT_LANGUAGE
 from database.models import ContentTopic
 from core.ai_provider import complete_json
-from core.feedback_loop import window_performance
+from core.feedback_loop import topic_reach_summary, window_performance
 from core.taxonomy import SEED_TOPICS
 
 logger = logging.getLogger(__name__)
@@ -67,7 +67,7 @@ def build_evolution_prompt(
     for i, w in enumerate(winners, start=1):
         winner_lines.append(
             f"{i}. \"{w['topic_title']}\" [{w['category']}]\n"
-            f"   - Jangkauan (reach): {w['reach']:,} dari {w['posts']} postingan\n"
+            f"   - Rata-rata jangkauan: {w['avg_reach']:,.0f} per postingan ({w['measured_posts']} postingan terukur)\n"
             f"   - Reaksi: {w['reactions']}, Komentar: {w['comments']}, Dibagikan: {w['shares']}\n"
             f"   - Konsep inti: {w['core_concept'][:300]}"
         )
@@ -87,21 +87,24 @@ Semua topik baru WAJIB merupakan pendalaman dari salah satu materi dasar berikut
 bukan konsep yang berdiri sendiri:
 {chr(10).join(curriculum_lines) or '- (belum ada materi dasar)'}
 
-TOPIK PEMENANG {window_days} HARI TERAKHIR (diurutkan dari jangkauan tertinggi):
+TOPIK PEMENANG HALAMAN INI (#1 adalah topik yang harus divariasikan):
 {chr(10).join(winner_lines)}
 
-TOPIK YANG SUDAH ADA (JANGAN diulang atau dibuat mirip):
+JUDUL YANG SUDAH ADA (jangan pakai judul yang sama persis):
 {chr(10).join('- ' + t for t in existing_titles)}
 
 TUGAS:
-Rancang {max_new} topik edukasi BARU tentang pencarian emas/geologi sungai yang:
-1. Berakar pada SATU materi dasar di kurikulum di atas (sebutkan judul persisnya
-   di field "base_topic") — topik baru adalah bab lanjutan dari materi itu.
-2. Mengambil arah yang terbukti diminati, yaitu tema topik pemenang di atas.
-3. Menggali aspek yang BELUM dibahas topik manapun di daftar yang sudah ada.
+Audiens halaman ini terbukti luas menjangkau TOPIK PEMENANG #1. Rancang
+{max_new} topik edukasi BARU yang merupakan VARIASI DEKAT dari pemenang #1:
+1. Kemiripan sekitar 90% dengan pemenang #1: subjek, mekanisme geologi/hidrolika,
+   dan jenis pembaca yang sama. Yang baru hanya ±10%: sudut pandang, contoh
+   lapangan, pertanyaan lanjutan, kesalahan umum, atau situasi spesifik.
+2. Jangan berpindah ke subjek lain; pemenang #2 dan #3 hanya konteks pendukung.
+3. Berakar pada materi dasar yang sama dengan pemenang #1 (sebutkan judul persis
+   materi dasar itu di field "base_topic").
 4. Tetap berbasis prinsip fisika/geologi yang benar dan bisa dipraktikkan di lapangan.
 5. Punya potensi visual kuat sebagai poster infografis vintage field guide.
-6. Judul ditulis dalam {caption_lang} atau Inggris singkat yang menarik.
+6. Judul ditulis dalam {caption_lang}, singkat dan menarik, berbeda dari judul yang sudah ada.
 
 Balas HANYA dengan JSON valid dengan bentuk:
 {{
@@ -112,7 +115,7 @@ Balas HANYA dengan JSON valid dengan bentuk:
       "title": "Judul topik yang spesifik dan menggugah rasa ingin tahu",
       "core_concept": "2-4 kalimat menjelaskan prinsip geologi/hidrolika di baliknya, termasuk angka atau mekanisme konkret.",
       "visual_blueprint": "Deskripsi detail poster infografis: judul banner, diagram penampang, panah aliran, panel identifikasi mineral, tekstur kertas tua.",
-      "why_this_works": "1 kalimat: kenapa topik ini melanjutkan materi dasar tersebut sekaligus tren pemenang di atas."
+      "why_this_works": "1 kalimat: apa yang sama dengan pemenang #1 dan sudut baru apa yang ditambahkan."
     }}
   ]
 }}
@@ -129,6 +132,7 @@ def generate_topic_variants(
     base_curriculum: list = None,
     window_days: int = 7,
     provider: str = "gemini",
+    reasoning: str | None = None,
 ) -> list:
     """Calls the chosen text model and returns the raw list of proposed topic dicts."""
     system_instruction = (
@@ -143,6 +147,7 @@ def generate_topic_variants(
         provider, api_key, model_name, system_instruction,
         build_evolution_prompt(winners, existing_titles, max_new, language, base_curriculum, window_days),
         0.9,  # higher: we want genuinely new angles
+        reasoning=reasoning,
     )
     if not raw:
         raise RuntimeError("Model AI tidak mengembalikan usulan topik apapun.")
@@ -260,23 +265,39 @@ def evolve_topics(
     page_id: int | None = None,
     generator=generate_topic_variants,
     provider: str = "gemini",
+    winner_ids: list | None = None,
+    reasoning: str | None = None,
 ) -> dict:
     """
-    Reads the winners of the last `window_days` and creates up to `max_new` topics
-    derived from them. With `page_id` the winners come from that Fanspage only, so
-    each page grows topics that suit its own audience. New topics join the shared
-    catalog and become available to every page.
+    Creates up to `max_new` close variants (about 90% the same subject) of a
+    winning topic. With `page_id` the winners come from that Fanspage only and the
+    variants belong to that page.
+
+    By default the winners are the best average reach of the last `window_days`.
+    `winner_ids` names them explicitly instead (lifetime results on the page): the
+    first id is the topic to vary, the rest are context. The focus rotation uses
+    it to keep every one of its top winners stocked with fresh variants.
 
     `generator` is injectable so the pipeline can be tested without the AI API.
     """
     if not api_key:
         return {"success": False, "message": "API Key model teks belum diisi."}
 
-    performance = window_performance(db, window_days, page_id)
-    winners = [
-        e for e in performance["ranking"]
-        if e["measured_posts"] > 0 and e["reach"] >= MIN_WINNER_REACH
-    ][:3]
+    if winner_ids and page_id is not None:
+        by_id = {t.id: t for t in db.query(ContentTopic).filter(ContentTopic.id.in_(winner_ids))}
+        winners = [topic_reach_summary(db, page_id, by_id[i]) for i in winner_ids if i in by_id]
+        winners = [w for w in winners if w["measured_posts"] > 0 or w is winners[0]]
+        performance = None
+    else:
+        # Reach still climbs for a day or two after posting, so only mature posts
+        # count, ranked by average reach per post (not the total, which would simply
+        # favour whatever was posted most often).
+        performance = window_performance(db, window_days, page_id, mature_only=True)
+        winners = sorted(
+            (e for e in performance["ranking"]
+             if e["measured_posts"] > 0 and e["reach"] >= MIN_WINNER_REACH),
+            key=lambda e: (e["avg_reach"], e["reach"]), reverse=True,
+        )[:3]
 
     if not winners:
         return {
@@ -312,6 +333,7 @@ def evolve_topics(
             base_curriculum=base_curriculum,
             window_days=window_days,
             provider=provider,
+            reasoning=reasoning,
         )
     except Exception as e:
         logger.exception("Topic evolution failed")
@@ -329,7 +351,12 @@ def evolve_topics(
             skipped.append({"title": variant["title"], "reason": "judul sudah ada"})
             continue
 
-        base = resolve_base_topic(db, variant["base_topic"], parent, variant)
+        if winner_ids and parent is not None:
+            # A rotation variant must stay in its winner's family, whatever base
+            # the model named, or the rotation would never serve it.
+            base = parent if parent.source == "seed" else (parent.base_topic or parent)
+        else:
+            base = resolve_base_topic(db, variant["base_topic"], parent, variant)
         topic = ContentTopic(
             category=variant["category"],
             topic_key=unique_topic_key(db, slugify(variant["title"])),
@@ -340,11 +367,12 @@ def evolve_topics(
             source="ai",
             parent_topic_id=parent.id if parent else None,
             base_topic_id=base.id if base else None,
+            origin_page_id=page_id,
             origin_note=(
                 f"Pendalaman materi dasar \"{base.title}\". " if base else ""
             ) + (
-                f"Dibuat dari pemenang {window_days} hari terakhir: "
-                f"\"{winners[0]['topic_title']}\" (reach {winners[0]['reach']:,}). "
+                f"Variasi dekat dari pemenang: "
+                f"\"{winners[0]['topic_title']}\" (rata-rata reach {winners[0]['avg_reach']:,.0f}). "
                 f"{variant['why_this_works']}"
             ).strip(),
             created_at=datetime.now(timezone.utc),

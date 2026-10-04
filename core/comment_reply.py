@@ -123,7 +123,7 @@ def generate_comment_reply(text_ai: dict, page_name: str, language: str, post_me
     )
     raw = complete_json(text_ai["provider"], text_ai["api_key"], text_ai["model"],
                         SYSTEM_PROMPT.format(page_name=page_name or "ini", language_rule=lang_rule),
-                        user_prompt, 0.9)
+                        user_prompt, 0.9, reasoning=text_ai.get("reasoning"))
     data = json.loads(raw or "{}")
     if not isinstance(data, dict):
         raise RuntimeError("Format balasan dari model AI tidak sesuai.")

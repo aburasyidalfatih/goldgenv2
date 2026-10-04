@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session
 
 from config import SECRET_MASK, DEFAULT_CONTENT_LANGUAGE
 from core.utils import iso_utc
-from database.models import FacebookPage, Post, PageTopicWeight, CommentReply
+from core.poster_style import THEMES, normalize_theme
+from database.models import ContentTopic, FacebookPage, Post, PageTopicWeight, CommentReply
 from core.fb_client import test_facebook_credentials
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,7 @@ def serialize_page(page: FacebookPage, db: Session | None = None) -> dict:
         "access_token": SECRET_MASK if page.access_token else "",
         "content_language": page.content_language or DEFAULT_CONTENT_LANGUAGE,
         "aspect_ratio": page.aspect_ratio or "3:4",
+        "color_theme": normalize_theme(page.color_theme),
         "auto_post_times": page.auto_post_times or "10:00,19:00",
         "autopilot_enabled": bool(page.autopilot_enabled),
         "is_active": page.is_active is not False,
@@ -164,6 +166,11 @@ def update_page(db: Session, page_row_id: int, payload: dict) -> dict:
         if key in payload and payload[key] is not None:
             setattr(page, key, caster(payload[key]) if caster is not bool else bool(payload[key]))
 
+    if payload.get("color_theme") is not None:
+        if payload["color_theme"] not in THEMES:
+            return {"success": False, "message": "Tema warna tidak dikenal."}
+        page.color_theme = payload["color_theme"]
+
     # Comment auto-reply preferences
     if payload.get("auto_reply_enabled") is not None:
         page.auto_reply_enabled = bool(payload["auto_reply_enabled"])
@@ -235,6 +242,9 @@ def delete_page(db: Session, page_row_id: int) -> dict:
     db.query(PageTopicWeight).filter(PageTopicWeight.page_id == page.id).delete()
     db.query(CommentReply).filter(CommentReply.page_id == page.id).delete()
     db.query(Post).filter(Post.page_id == page.id).update({Post.page_id: None})
+    # Its variants become shared instead of belonging to no page at all.
+    db.query(ContentTopic).filter(ContentTopic.origin_page_id == page.id).update(
+        {ContentTopic.origin_page_id: None})
     db.delete(page)
     db.commit()
 

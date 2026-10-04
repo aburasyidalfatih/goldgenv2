@@ -6,7 +6,6 @@ from collections import Counter
 
 from core.feedback_loop import (
     BASE_TOPIC_WEIGHT_FLOOR,
-    STALE_TOPIC_CAP,
     get_next_recommended_topic,
     optimize_topic_weights,
     page_topic_weights,
@@ -48,17 +47,22 @@ def test_bobot_naik_untuk_topik_yang_jangkauannya_tinggi(client, make_page, make
     assert weights[favorit.id] > 1.5
 
 
-def test_pemenang_paling_sering_diproduksi(client, make_page, make_post, topics, db):
+def test_tahap_fokus_merotasi_tiga_pemenang_reach_teratas(client, make_page, make_post,
+                                                       finish_test_phase, topics, db, monkeypatch):
+    """Setelah konten pemenang #1 tayang, berikutnya #2, lalu #3, lalu kembali ke #1."""
+    import core.feedback_loop as feedback
     page = make_page("111")
-    favorit = topics[5]
-    make_post(page["id"], favorit, days_ago=3, reach=15000)
-    make_post(page["id"], favorit, days_ago=5, reach=18000)
-    make_post(page["id"], topics[0], days_ago=4, reach=900)
+    pertama, kedua, ketiga = topics[5], topics[1], topics[7]
+    finish_test_phase(page["id"], reach=900, skip={pertama.id, kedua.id, ketiga.id})
+    make_post(page["id"], pertama, days_ago=5, reach=15000)
+    make_post(page["id"], kedua, days_ago=5, reach=6000)
+    make_post(page["id"], ketiga, days_ago=5, reach=4000)
     optimize_topic_weights(db, 7, page["id"])
+    monkeypatch.setattr(feedback.random, "random", lambda: 0.99)   # tanpa eksplorasi
 
-    picks = Counter(get_next_recommended_topic(db, page["id"]).id for _ in range(600))
+    urutan = [get_next_recommended_topic(db, page["id"]).id for _ in range(6)]
 
-    assert picks.most_common(1)[0][0] == favorit.id
+    assert urutan == [pertama.id, kedua.id, ketiga.id] * 2
 
 
 def test_dua_halaman_belajar_terpisah(client, make_page, make_post, topics, db):
@@ -97,17 +101,25 @@ def test_halaman_baru_tidak_mewarisi_selera_halaman_lain(client, make_page, make
     assert set(wb.values()) <= {1.0, 1.1, 1.2}, "halaman baru harus mulai dari nol"
 
 
-def test_juara_lama_tidak_mengalahkan_pemenang_minggu_ini(client, make_page, make_post, topics, db):
+def test_juara_yang_mulai_ditinggalkan_bobotnya_turun(client, make_page, make_post,
+                                                     finish_test_phase, topics, db):
+    """
+    Topik fokus terus diposting ulang, jadi angka terbarunya ikut menilai: juara lama
+    yang kini sepi tidak boleh terus mengalahkan topik yang stabil.
+    """
     page = make_page("111")
-    juara_lama, pemenang_baru = topics[0], topics[3]
-    make_post(page["id"], juara_lama, days_ago=25, reach=90000)
-    make_post(page["id"], pemenang_baru, days_ago=3, reach=12000)
+    juara_lama, stabil = topics[0], topics[3]
+    finish_test_phase(page["id"], reach=2000, skip={juara_lama.id, stabil.id})
+    make_post(page["id"], juara_lama, days_ago=25, reach=12000)
+    make_post(page["id"], juara_lama, days_ago=3, reach=500)
+    make_post(page["id"], juara_lama, days_ago=4, reach=600)
+    make_post(page["id"], stabil, days_ago=20, reach=6000)
+    make_post(page["id"], stabil, days_ago=3, reach=6500)
 
     optimize_topic_weights(db, 7, page["id"])
     weights = page_topic_weights(db, page["id"], topics)
 
-    assert weights[juara_lama.id] <= STALE_TOPIC_CAP
-    assert weights[pemenang_baru.id] > weights[juara_lama.id]
+    assert weights[stabil.id] > weights[juara_lama.id]
 
 
 def test_topik_dasar_punya_lantai_bobot(client, make_page, make_post, topics, db):

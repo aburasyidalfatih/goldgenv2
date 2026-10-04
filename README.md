@@ -23,7 +23,9 @@ Aplikasi cerdas untuk memproduksi konten edukasi visual (poster infografis geolo
    * Pemilih halaman aktif di header; Studio dan Analitik otomatis mengikuti halaman yang dipilih.
 2. **Dashboard Interaktif Berbasis Web (Dark Gold Geology Theme)**:
    * Input dan simpan seluruh kredensial (**Gemini API Key, OpenAI API Key, Facebook Page ID, Page Access Token**) langsung dari UI tanpa perlu mengedit file kode.
-   * **Pilihan mesin AI**: penyedia naskah dan penyedia gambar dipilih terpisah (Gemini atau OpenAI) — misalnya naskah dari Gemini, poster dari `gpt-image-1`. Berlaku untuk generate manual, render ulang, autopilot, dan evolusi topik. Hanya kunci penyedia yang dipilih yang wajib diisi.
+   * **Pilihan mesin AI**: penyedia naskah dan penyedia gambar dipilih terpisah (Gemini atau OpenAI) — misalnya naskah dari Gemini, poster dari `gpt-image-2.5-flare`. Model OpenAI dipilih dari dropdown berisi model yang masih berlaku (GPT-6.1 Sol, GPT-6 Luna, GPT-6 Astra, GPT-5.6 Terra; GPT Image 2.5 Flare/Sunburst, GPT Image 2) atau diketik manual; model yang sudah dihentikan OpenAI (mis. `gpt-5-mini`, `gpt-image-1`, `dall-e-3`) otomatis diganti saat aplikasi menyala. Berlaku untuk generate manual, render ulang, autopilot, dan evolusi topik. Hanya kunci penyedia yang dipilih yang wajib diisi.
+   * **Kendali biaya** (tab Pengaturan): *Tingkat Penalaran Teks* (default Rendah — token "berpikir" ditagih sebagai output, dan caption tidak butuh penalaran berat), *Kualitas Gambar OpenAI* (default Sedang ±$0,04/gambar; *Otomatis* bisa memilih kualitas mahal), dan model gambar Gemini hemat `gemini-3.1-flash-lite-image` (±$0,034 vs ±$0,067/gambar). Rasio poster Fanspage kini juga dikirim ke model gambar Gemini.
+   * **Identitas visual per Fanspage**: tiap Fanspage memilih *Tema Warna Poster* di tab Fanspage — 9 pilihan: Vintage Parchment, Midnight Gold, Forest & Copper, Desert Sunset, Glacier Blue, Blueprint, Volcanic, Crimson Ore, atau Sage & Clay — dan paletnya dipaksakan ke prompt gambar. Setiap poster diberi **watermark nama Fanspage** di pojok kanan bawah; watermark digambar oleh aplikasi (bukan diminta ke AI), jadi ejaan dan posisinya selalu tepat tanpa biaya tambahan.
    * OpenAI hanya menyediakan kanvas potret 2:3, persegi, dan lanskap; poster dibuat di kanvas yang paling dekat dengan rasio Fanspage.
    * Uji coba validitas API Key dan token dalam 1 klik.
    * Responsif penuh: navigasi tab tetap terjangkau di HP, tablet, dan desktop.
@@ -35,17 +37,16 @@ Aplikasi cerdas untuk memproduksi konten edukasi visual (poster infografis geolo
    * **Dialog konfirmasi sebelum publish** — menampilkan nama Fanspage tujuan dan cuplikan caption.
    * **Anti publish ganda**: postingan dikunci dengan status *Sedang Dipublikasikan* selama unggahan berlangsung, jadi klik ganda atau dua tab terbuka tidak pernah menghasilkan postingan kembar di Facebook. Bila aplikasi mati di tengah unggahan, postingan ditandai *Gagal* dengan peringatan untuk memeriksa Fanspage sebelum publish ulang.
    * Buka ulang postingan lama dari Riwayat ke Studio, render ulang gambar, atau hapus draft (beserta file posternya).
-4. **Feedback Learning Loop (Kecerdasan Adaptif)**:
-   * Menghitung skor performa postingan: $\text{Score} = (\text{Shares} \times 4) + (\text{Comments} \times 3) + (\text{Reactions} \times 1.5) + (\text{Reach} \times 0.05)$.
-   * Aturan **70% Exploit** (memperbanyak variasi topik pemenang) dan **30% Explore** (menguji topik baru).
-   * Visual leaderboard bobot topik yang terus diperbarui.
-   * **Bobot berbasis jendela waktu**: performa 7 hari terakhir menentukan 70% bobot, riwayat seumur hidup 30%. Topik yang tidak tayang dalam periode analisis dibatasi di bobot 0.95 — tepat di bawah titik netral — sehingga juara lama maupun topik yang belum pernah dicoba tidak bisa mengalahkan topik yang sedang perform.
-   * Bobot bersifat **relatif terhadap rata-rata** (1.0 = rata-rata minggu ini), jadi skalanya tetap masuk akal baik jangkauan halaman Anda ratusan maupun ratusan ribu.
-   * Bila hanya **satu topik** yang tayang minggu itu, ia dibandingkan dengan postingan tipikal halaman sebelumnya (median 60 hari) — pemenang jelas mendapat bobot tinggi, yang hasilnya jeblok tetap di 1.0 tanpa didongkrak.
-   * Kartu **Topik Pemenang** selalu menampilkan topik yang benar-benar diprioritaskan mesin pembelajaran, dan *Belum cukup data* sebelum ada metrik.
+4. **Feedback Learning Loop (Kecerdasan Adaptif)** — tiap Fanspage belajar dari **reach**-nya sendiri, dalam dua tahap:
+   * **Tahap Uji**: setiap topik dasar diposting **tepat sekali** di Fanspage itu (urutan acak, tanpa pengulangan) sebelum ada topik yang diulang. Kartu Analitik menampilkan progresnya, mis. *12/33*.
+   * **Tahap Fokus** (setelah semua teruji): 90% postingan **merotasi 3 pemenang reach teratas** — #1 → #2 → #3 → #1 … Untuk setiap pemenang, **variasi AI yang belum tayang dipakai lebih dulu** (±90% mirip); bila habis, topik pemenang itu sendiri diposting ulang dengan caption & poster baru. 10% sisanya tetap eksplorasi topik yang paling jarang dipakai, untuk menangkap perubahan selera audiens.
+   * **Pemenang baru**: peringkat dihitung ulang tiap malam dari rata-rata reach. Bila #1 berganti (mis. sebuah variasi menyalip pemenang lama), rotasi dimulai lagi dari #1 yang baru.
+   * **Hanya reach yang menilai**, dan hanya dari postingan berumur **≥ 48 jam** (reach masih naik sehari-dua setelah tayang). Bobot = rata-rata reach topik dibanding rata-rata semua topik terukur di halaman itu; bila topik baru saja diposting ulang, angka terbarunya diberi porsi 70%.
+   * **Stok variasi**: tiap malam (setelah sinkron metrik pukul 03:00), pemenang rotasi yang kehabisan variasi belum-tayang dibuatkan variasi baru oleh AI — pertama kali tepat setelah Tahap Uji selesai dan semua topik terukur. Variasi itu **milik Fanspage asalnya** dan hanya diuji di sana.
+   * Skor gabungan (shares ×4 + komentar ×3 + reaksi ×1,5 + reach ×0,05) tetap disimpan untuk riwayat, tetapi tidak lagi menentukan pilihan topik.
 5. **Kurikulum Dasar & Evolusi Topik (Topik Dinamis)**:
-   * **10 topik seed adalah kurikulum dasar** — fondasi permanen yang selalu diajarkan. Seluruh isinya dikirim ke AI sebagai materi belajar setiap kali topik baru dirancang.
-   * Setiap Senin pukul 04:00, AI membaca topik dengan **jangkauan tertinggi selama 7 hari terakhir**, lalu menulis "bab lanjutan" dari salah satu materi dasar — lengkap dengan konsep geologi dan blueprint visualnya.
+   * **Topik seed adalah kurikulum dasar** (33 topik, lihat `docs/riset-topik-faq-prospector.md`) — fondasi permanen yang selalu diajarkan. Seluruh isinya dikirim ke AI sebagai materi belajar setiap kali topik baru dirancang.
+   * AI menulis **variasi dekat** (±90% sama: subjek & mekanisme sama, sudut baru) dari pemenang reach — lengkap dengan konsep geologi dan blueprint visualnya. Tombol evolusi manual di dashboard memakai pemenang 7 hari terakhir.
    * Setiap topik turunan **wajib berakar ke satu topik dasar**. Bila AI menyebut materi dasar yang tidak ada, sistem mencocokkan sendiri berdasarkan kemiripan isi.
    * Topik dasar ditandai badge **DASAR** (permanen, tidak bisa dinonaktifkan, bobot minimal 0.8 agar fundamental tetap tayang). Topik turunan ditandai **TURUNAN**, bobot awal 1.4, bisa dinonaktifkan bila tidak perform.
    * Validasi otomatis menolak usulan yang duplikat atau tidak lengkap.
@@ -144,14 +145,41 @@ Skrip ini menampilkan untuk tiap Fanspage:
 
 ## 💾 Backup
 
-Cukup salin dua folder ini saat aplikasi **berhenti**:
+**Otomatis:** tiap malam pukul 03:30 aplikasi menyalin database (kredensial, riwayat,
+pembelajaran topik) ke `backups/autoposter-YYYYMMDD-HHMMSS.db.gz`. Salinan dibuat dengan
+API backup SQLite (aman walau aplikasi sedang berjalan), dicek integritasnya, dikompres,
+dan disimpan **14 hari**. Di Docker folder ini volume tersendiri (`autoposter_backups`),
+terpisah dari volume database. Bila VPS mati saat jadwal backup, backup dibuat begitu
+aplikasi menyala lagi. Backup yang gagal dikirim sebagai notifikasi email.
 
-```
-data/       -> database (kredensial, riwayat, pembelajaran)
-storage/    -> poster hasil generate
+Di tab **Pengaturan > Backup Database** ada tombol **Backup Sekarang** dan tautan unduh
+tiap backup — unduh sesekali ke komputer Anda sebagai salinan di luar VPS. Isinya memuat
+API key & token, jadi simpan di tempat aman.
+
+**Memulihkan** (aplikasi dihentikan dulu):
+
+```bash
+gunzip -c autoposter-20261002-033000.db.gz > data/autoposter.db
+rm -f data/autoposter.db-wal data/autoposter.db-shm
 ```
 
-Database memakai mode **WAL**, jadi saat aplikasi sedang berjalan ada berkas pendamping `autoposter.db-wal` dan `-shm`. Kalau menyalin tanpa menghentikan aplikasi, sertakan ketiganya — kalau tidak, transaksi terakhir bisa hilang. Memulihkan cukup mengembalikan kedua folder; jadwal autopilot dibangun ulang sendiri dari database saat aplikasi dinyalakan.
+Di Docker: hentikan service, salin hasil `gunzip` ke volume `autoposter_data`
+sebagai `autoposter.db`, lalu jalankan lagi. Poster di `storage/` tidak ikut dibackup
+(hanya gambar; bisa dirender ulang dari prompt tersimpan).
+
+## 📧 Notifikasi Email
+
+Tab **Pengaturan > 4. Notifikasi Email**. Aplikasi mengirim email bila:
+
+- posting otomatis gagal (AI error / saldo habis, atau Facebook menolak),
+- token Fanspage tidak berlaku (dicek tiap malam saat sinkron metrik),
+- API key AI kosong saat jadwal posting tiba,
+- balas komentar otomatis terhenti, atau sinkron metrik / evolusi topik / backup gagal.
+
+Masalah yang sama dikirim paling sering sekali per beberapa jam agar inbox tidak banjir.
+Untuk Gmail: aktifkan Verifikasi 2 Langkah, buat **App Password** di
+<https://myaccount.google.com/apppasswords>, isi email Gmail pengirim + App Password,
+lalu klik **Simpan & Kirim Email Uji**. Email tujuan kosong = email login dashboard.
 
 ---
 
@@ -180,6 +208,8 @@ Catatan:
 * Jalankan **satu replika saja**. Scheduler Autopilot berjalan di dalam proses aplikasi dan database-nya SQLite — dua replika berarti posting ganda.
 * Alternatif: tipe **Docker Compose** memakai `docker-compose.yml` di repo ini (volume & environment sudah didefinisikan; atur domain ke port `8000`).
 * Ingin memindahkan data lokal (API key, Fanspage, riwayat postingan)? Hentikan aplikasi lokal, lalu salin `data/autoposter.db` ke volume `/app/data` di server sebelum start pertama. Jika tidak, cukup isi ulang pengaturan dari dashboard.
+* Build macet di `pip install` dengan *Read timed out* ke `pypi.org`? Sebagian penyedia VPS tidak bisa merutekan ke sebagian jaringan Fastly (CDN PyPI). Cek dari VPS: `curl -sS -o /dev/null -w "%{http_code}
+" --max-time 15 --resolve pypi.org:443:199.232.192.223 https://pypi.org/simple/`; bila `200`, isi Environment Dokploy dengan `PYPI_HOST_OVERRIDE=pypi.org:199.232.192.223` dan `PYPI_FILES_HOST_OVERRIDE=files.pythonhosted.org:199.232.192.223`, lalu Deploy ulang. Paket tetap dari PyPI resmi dengan TLS terverifikasi.
 * Lupa password? Dari terminal container di Dokploy: `python /app/scripts/atur_login.py email@anda.com` (terminal Dokploy terbuka di `/`, jadi pakai path lengkap), lalu **Restart** service bila login sedang terkunci karena terlalu banyak percobaan gagal.
 
 ---
@@ -194,6 +224,7 @@ Catatan:
 | `FB_GRAPH_API_VERSION` | `v25.0` | Versi Facebook Graph API. Ganti bila Meta men-sunset versi ini. |
 | `AUTOPOSTER_DATA_DIR` | `./data` | Lokasi database SQLite. Dipakai suite tes agar tidak menyentuh data asli. |
 | `AUTOPOSTER_STORAGE_DIR` | `./storage` | Lokasi poster hasil generate. |
+| `AUTOPOSTER_BACKUP_DIR` | `./backups` | Lokasi backup database harian. |
 
 Pengaturan evolusi topik (`auto_topic_evolution`, `topic_window_days`, `max_new_topics_per_cycle`) diatur dari tab **Pengaturan**, bukan environment variable.
 

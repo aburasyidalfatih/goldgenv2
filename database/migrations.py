@@ -21,12 +21,16 @@ ADDED_COLUMNS = [
     ("content_topics", "origin_note", "TEXT"),
     ("content_topics", "created_at", "DATETIME"),
     ("content_topics", "is_active", "BOOLEAN DEFAULT 1"),
+    ("content_topics", "origin_page_id", "INTEGER"),
     ("posts", "page_id", "INTEGER"),
     ("facebook_pages", "auto_reply_enabled", "BOOLEAN DEFAULT 0"),
     ("facebook_pages", "auto_reply_mode", "VARCHAR(20) DEFAULT 'auto'"),
     ("facebook_pages", "reply_max_per_hour", "INTEGER DEFAULT 20"),
     ("facebook_pages", "reply_last_run", "DATETIME"),
     ("facebook_pages", "reply_last_error", "TEXT"),
+    ("facebook_pages", "focus_leader_key", "INTEGER"),
+    ("facebook_pages", "focus_cursor", "INTEGER DEFAULT 0"),
+    ("facebook_pages", "color_theme", "VARCHAR(30) DEFAULT 'parchment'"),
 ]
 
 

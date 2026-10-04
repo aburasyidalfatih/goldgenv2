@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
@@ -22,6 +22,7 @@ from config import (
     DEFAULT_TEXT_MODEL,
     DEFAULT_OPENAI_TEXT_MODEL,
     DEFAULT_OPENAI_IMAGE_MODEL,
+    OPENAI_RETIRED_MODELS,
     SENSITIVE_SETTING_KEYS,
     SECRET_MASK,
     DEFAULT_CONTENT_LANGUAGE,
@@ -36,7 +37,7 @@ from core.gemini_client import test_gemini_key, generate_post_content, template_
 from core.openai_client import test_openai_key
 from core.ai_provider import ai_backend, PROVIDER_LABELS
 from core.imagen_client import generate_poster_image
-from core.fb_client import publish_photo_to_page
+from core.fb_client import publish_photo_to_page, fetch_post_metrics, MetricsUnavailable
 from core.feedback_loop import (
     get_next_recommended_topic,
     update_all_post_metrics,
@@ -46,10 +47,17 @@ from core.feedback_loop import (
     page_topic_weights,
     baseline_weight_for,
     mark_topic_used,
+    store_post_metrics,
+    topics_for_page,
+    learning_phase,
+    focus_winners,
 )
 from core.topic_evolution import evolve_topics, retire_topic, reactivate_topic
 from core import comment_reply
 from core import auth
+from core.poster_style import THEMES
+from core import notifier
+from core.backup import BACKUP_KEEP_DAYS, backup_path, create_backup, list_backups
 from core.pages import (
     list_pages,
     get_page,
@@ -90,6 +98,23 @@ def bootstrap_first_user(db: Session):
     except ValueError as e:
         logger.error(f"AUTOPOSTER_ADMIN_* tidak valid: {e}")
 
+def replace_retired_openai_models(db: Session) -> dict:
+    """
+    A saved OpenAI model that OpenAI has shut down (or is about to) would make
+    every generation fail; swap it for its listed replacement. Returns the changes.
+    """
+    changed = {}
+    for key in ("openai_text_model", "openai_image_model"):
+        row = db.query(AppSetting).filter(AppSetting.key == key).first()
+        if row and row.value in OPENAI_RETIRED_MODELS:
+            changed[key] = (row.value, OPENAI_RETIRED_MODELS[row.value])
+            row.value = OPENAI_RETIRED_MODELS[row.value]
+    if changed:
+        db.commit()
+        for key, (old, new) in changed.items():
+            logger.info(f"OpenAI model '{old}' is retired; {key} switched to '{new}'.")
+    return changed
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Database Initialization
@@ -112,6 +137,7 @@ async def lifespan(app: FastAPI):
         added = seed_base_curriculum(db)
         if added:
             logger.info(f"Added {len(added)} base topic(s) to the curriculum.")
+        replace_retired_openai_models(db)
         # A post left in "publishing" means the app stopped mid-upload. Whether
         # Facebook received it is unknown, so flag it instead of retrying blindly.
         stuck = db.query(Post).filter(Post.status == "publishing").all()
@@ -286,7 +312,7 @@ async def serve_dashboard(request: Request):
     return templates.TemplateResponse(
         request,
         "index.html",
-        {"asset_v": asset_version()}
+        {"asset_v": asset_version(), "themes": THEMES}
     )
 
 # ==========================================
@@ -301,7 +327,8 @@ _VERIFIED_FIELDS = {
     "openai": ("openai_api_key", "openai_text_model", "openai_image_model"),
 }
 # Computed or internal: never written from the settings form.
-READ_ONLY_SETTING_KEYS = set(VERIFIED_FP_KEY.values()) | {f"{p}_status" for p in VERIFIED_FP_KEY}
+READ_ONLY_SETTING_KEYS = (set(VERIFIED_FP_KEY.values()) | {f"{p}_status" for p in VERIFIED_FP_KEY}
+                          | {"last_metrics_sync_at"})   # written by the nightly sync
 
 def _verification_fingerprint(*values: str) -> str:
     return hashlib.sha256("".join(values).encode("utf-8")).hexdigest()
@@ -585,6 +612,7 @@ def evolve_topics_endpoint(page: Optional[int] = None, db: Session = Depends(get
         api_key=text_ai["api_key"],
         model_name=text_ai["model"],
         provider=text_ai["provider"],
+        reasoning=text_ai["reasoning"],
         window_days=get_int_setting(db, "topic_window_days", 7, 1, 90),
         max_new=get_int_setting(db, "max_new_topics_per_cycle", 2, 1, 5),
         language=(target.content_language if target else None) or DEFAULT_CONTENT_LANGUAGE,
@@ -616,20 +644,46 @@ def analytics_summary(page: Optional[int] = None, db: Session = Depends(get_db))
             total_reach += m.reach
             total_engagement += (m.reactions + m.comments + m.shares)
 
-    # The card is labelled "Prioritas 70% posting", so it must name the topic the
+    # The card names the focus topic, so it must name the topic the
     # learning loop actually favours — not a lifetime sum of scores, which rewards
     # topics that were merely posted often and can disagree with what gets produced.
     measured = [p for p in posts if p.metrics]
     winning = "Belum cukup data"
     if measured:
-        topics = db.query(ContentTopic).filter(ContentTopic.is_active.isnot(False)).all()
         if page:
-            weights = page_topic_weights(db, page, topics)
+            # Same ranking the focus rotation serves first (raw average reach).
+            winners = focus_winners(db, page)
+            top_topic = winners[0]["leader"] if winners else None
         else:
-            weights = {t.id: (t.weight or 0) for t in topics}
-        top_topic = max(topics, key=lambda t: weights.get(t.id, 0), default=None)
+            topics = topics_for_page(db, None)
+            top_topic = max(topics, key=lambda t: t.weight or 0, default=None)
         if top_topic:
             winning = top_topic.title
+
+    learning = None
+    if page:
+        phase = learning_phase(db, page)
+        learning = {
+            "phase": phase["phase"],
+            "tested": phase["tested"],
+            "measured": phase["measured"],
+            "pending": phase["pending"],
+            "total": phase["total"],
+        }
+        if phase["phase"] == "focus":
+            page_row = get_page(db, page)
+            winners = focus_winners(db, page)
+            restarted = page_row and page_row.focus_leader_key != (winners[0]["key"] if winners else None)
+            learning["next_rank"] = 1 if restarted or not winners else (page_row.focus_cursor or 0) % len(winners) + 1
+            learning["rotation"] = [
+                {
+                    "rank": i,
+                    "title": w["leader"].title,
+                    "avg_reach": round(w["avg_reach"]),
+                    "fresh_variants": len(w["fresh_variants"]),
+                }
+                for i, w in enumerate(winners, start=1)
+            ]
 
     return {
         "page_id": page,
@@ -637,6 +691,7 @@ def analytics_summary(page: Optional[int] = None, db: Session = Depends(get_db))
         "total_reach": total_reach,
         "total_engagement": total_engagement,
         "winning_topic": winning,
+        "learning": learning,
         "has_metrics": bool(measured),
         "last_updated": iso_utc(max((p.metrics[0].last_checked_at for p in measured), default=None))
     }
@@ -713,6 +768,7 @@ def generate_content_endpoint(req: GenerateRequest, db: Session = Depends(get_db
             language=language,
             model_name=text_ai["model"],
             provider=text_ai["provider"],
+            reasoning=text_ai["reasoning"],
         )
 
         # 3. Generate Poster Image
@@ -722,6 +778,9 @@ def generate_content_endpoint(req: GenerateRequest, db: Session = Depends(get_db
             aspect_ratio=aspect_ratio,
             model_name=image_ai["model"],
             provider=image_ai["provider"],
+            quality=image_ai["quality"],
+            theme=page.color_theme if page else None,
+            watermark=page.name if page else None,
         )
         img_path_sementara = img_path
 
@@ -916,6 +975,9 @@ def regenerate_image_endpoint(post_id: int, db: Session = Depends(get_db)):
             aspect_ratio=aspect_ratio,
             model_name=image_ai["model"],
             provider=image_ai["provider"],
+            quality=image_ai["quality"],
+            theme=page.color_theme if page else None,
+            watermark=page.name if page else None,
         )
         # Rendering takes a while: only swap the poster if the post was not
         # published in the meantime, or the DB would point at a different image
@@ -979,6 +1041,7 @@ def regenerate_caption_endpoint(post_id: int, db: Session = Depends(get_db)):
             language=language,
             model_name=text_ai["model"],
             provider=text_ai["provider"],
+            reasoning=text_ai["reasoning"],
         )
     except Exception as e:
         logger.exception("Regenerate caption error")
@@ -1001,6 +1064,36 @@ def regenerate_caption_endpoint(post_id: int, db: Session = Depends(get_db)):
                 "message": "Postingan ini dipublikasikan saat caption baru dibuat; caption yang tayang dipertahankan."}
     db.commit()
     return {"success": True, "caption": caption, "language": language}
+
+@app.post("/api/posts/{post_id}/metrics/refresh")
+def refresh_post_metrics_endpoint(post_id: int, db: Session = Depends(get_db)):
+    """Pulls this one post's live numbers from Facebook (likes, comments, shares, views, reach)."""
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Postingan tidak ditemukan.")
+    if post.status != "published" or not post.fb_post_id:
+        return {"success": False, "message": "Postingan ini belum tayang di Facebook."}
+    page = get_page(db, post.page_id) if post.page_id else None
+    if not page or not page.access_token:
+        return {"success": False, "message": "Fanspage postingan ini tidak punya Access Token."}
+
+    try:
+        m_data = fetch_post_metrics(page.page_id, page.access_token, post.fb_post_id)
+    except MetricsUnavailable as e:
+        return {"success": False, "message": f"Metrik belum bisa diambil dari Facebook: {e}"}
+    metric = store_post_metrics(db, post, m_data)
+    db.commit()
+    return {
+        "success": True,
+        "metrics": {
+            "reactions": metric.reactions,
+            "comments": metric.comments,
+            "shares": metric.shares,
+            "reach": metric.reach,
+            "impressions": metric.impressions,
+            "last_checked_at": iso_utc(metric.last_checked_at),
+        },
+    }
 
 @app.delete("/api/posts/{post_id}")
 def delete_post_endpoint(post_id: int, db: Session = Depends(get_db)):
@@ -1032,11 +1125,12 @@ def delete_post_endpoint(post_id: int, db: Session = Depends(get_db)):
 
 CAPTION_PREVIEW_CHARS = 160
 
-def serialize_post(p: Post, page_names: dict, full: bool = False) -> dict:
+def serialize_post(p: Post, page_names: dict, full: bool = False, with_caption: bool = False) -> dict:
     """
     List view stays light: the full caption and image prompt are only sent for a
     single post. With a year of history those two fields alone were hundreds of
-    kilobytes per request.
+    kilobytes per request. The home feed asks for captions (`with_caption`) but
+    loads a handful of posts at a time.
     """
     m = p.metrics[0] if p.metrics else None
     data = {
@@ -1059,10 +1153,13 @@ def serialize_post(p: Post, page_names: dict, full: bool = False) -> dict:
             "comments": m.comments if m else 0,
             "shares": m.shares if m else 0,
             "reach": m.reach if m else 0,
+            "impressions": m.impressions if m else 0,
+            "last_checked_at": iso_utc(m.last_checked_at) if m else None,
         } if m else None
     }
-    if full:
+    if full or with_caption:
         data["caption"] = p.caption
+    if full:
         data["prompt_used"] = p.prompt_used
     return data
 
@@ -1093,6 +1190,7 @@ def list_posts(
     offset: int = 0,
     search: str = "",
     status: str = "",
+    with_caption: bool = False,
     db: Session = Depends(get_db),
 ):
     query = db.query(Post)
@@ -1107,10 +1205,10 @@ def list_posts(
         query = query.filter(Post.status == status)
     total = query.count()
     limit = max(1, min(limit, 200))
-    posts = query.order_by(Post.created_at.desc()).offset(max(0, offset)).limit(limit).all()
+    posts = query.order_by(Post.created_at.desc(), Post.id.desc()).offset(max(0, offset)).limit(limit).all()
 
     page_names = {p.id: p.name for p in list_page_rows(db)}
-    items = [serialize_post(p, page_names) for p in posts]
+    items = [serialize_post(p, page_names, with_caption=with_caption) for p in posts]
     return {
         "items": items,
         "total": total,
@@ -1127,6 +1225,48 @@ def get_post(post_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Postingan tidak ditemukan.")
     page_names = {p.id: p.name for p in list_page_rows(db)}
     return serialize_post(post, page_names, full=True)
+
+# ==========================================
+# REST API: EMAIL ALERTS & DATABASE BACKUPS
+# ==========================================
+@app.get("/api/notifications")
+def notification_info(db: Session = Depends(get_db)):
+    return {"recipient": notifier.recipient(db)}
+
+
+@app.post("/api/notifications/test")
+def send_test_email(db: Session = Depends(get_db)):
+    """Sends a test message with the saved settings (the UI saves first)."""
+    return notifier.send_email(
+        db, "Email uji notifikasi",
+        "Notifikasi email berhasil diatur.\n\n"
+        "Mulai sekarang Anda akan menerima email jika: posting otomatis gagal, token Facebook "
+        "bermasalah, API key AI habis/ditolak, balas komentar otomatis terhenti, atau backup gagal.",
+    )
+
+
+@app.get("/api/backups")
+def get_backups():
+    return {"items": list_backups(), "keep_days": BACKUP_KEEP_DAYS}
+
+
+@app.post("/api/backups")
+def make_backup():
+    try:
+        made = create_backup()
+    except Exception as e:
+        logger.error(f"Manual backup failed: {e}")
+        return {"success": False, "message": f"Backup gagal: {e}"}
+    return {"success": True, "message": "Backup database berhasil dibuat.", "backup": made}
+
+
+@app.get("/api/backups/{name}")
+def download_backup(name: str):
+    path = backup_path(name)
+    if not path:
+        raise HTTPException(status_code=404, detail="Backup tidak ditemukan.")
+    return FileResponse(path, media_type="application/gzip", filename=name)
+
 
 # ==========================================
 # REST API: COMMENT AUTO-REPLY

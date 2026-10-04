@@ -33,6 +33,7 @@ class FacebookPage(Base):
     # Per-page content preferences
     content_language = Column(String(10), default=DEFAULT_CONTENT_LANGUAGE)
     aspect_ratio = Column(String(10), default="3:4")
+    color_theme = Column(String(30), default="parchment")   # see core/poster_style.THEMES
     auto_post_times = Column(String(200), default="10:00,19:00")
     autopilot_enabled = Column(Boolean, default=False)
 
@@ -42,6 +43,11 @@ class FacebookPage(Base):
     reply_max_per_hour = Column(Integer, default=20)
     reply_last_run = Column(DateTime, nullable=True)
     reply_last_error = Column(Text, nullable=True)
+
+    # Focus-phase rotation over the page's top reach winners: which winner family
+    # leads (a change restarts the rotation at #1) and which slot comes next.
+    focus_leader_key = Column(Integer, nullable=True)
+    focus_cursor = Column(Integer, default=0)
 
     is_active = Column(Boolean, default=True, index=True)  # false = paused entirely
     token_status = Column(String(50), default="Belum diverifikasi")
@@ -101,6 +107,9 @@ class ContentTopic(Base):
     parent_topic_id = Column(Integer, ForeignKey("content_topics.id"), nullable=True)
     base_topic_id = Column(Integer, ForeignKey("content_topics.id"), nullable=True, index=True)
     origin_note = Column(Text, nullable=True)      # why this topic was created
+    # Fanspage whose winner this variant was grown from; only that page tests it.
+    # NULL = shared (base topics and variants created before pages owned them).
+    origin_page_id = Column(Integer, ForeignKey("facebook_pages.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at = Column(DateTime, default=utc_now)
     is_active = Column(Boolean, default=True, index=True)
 

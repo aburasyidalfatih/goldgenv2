@@ -11,6 +11,7 @@ venv/
 data/*
 !data/.gitkeep
 storage/generated_images/*
+backups/
 !storage/generated_images/.gitkeep
 
 # Test artifacts

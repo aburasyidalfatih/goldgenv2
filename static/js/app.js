@@ -2,6 +2,13 @@
 // of a stored secret. Sending it back unchanged keeps the stored value.
 const SECRET_MASK = '••••••••••••';
 
+// OpenAI models offered in the Settings dropdowns (checked 1 Oct 2026). Anything
+// else is entered through "Model lain…".
+const OPENAI_MODELS = {
+    text: ['gpt-6.1-sol', 'gpt-6-luna', 'gpt-6-astra', 'gpt-5.6-terra'],
+    image: ['gpt-image-2.5-flare', 'gpt-image-2.5-sunburst', 'gpt-image-2'],
+};
+
 // A 401 from the API means the login session ended (logged out elsewhere, password
 // changed, expired): send the browser back to the login page.
 if (typeof window !== 'undefined') {   // absent when the UI tests load this file in node
@@ -16,7 +23,7 @@ if (typeof window !== 'undefined') {   // absent when the UI tests load this fil
 function autoPosterApp() {
     return {
         activeTab: 'generator',
-        draftSnapshot: '', isSavingDraft: false, isRegenerating: false, isRewritingCaption: false,
+        draftSnapshot: '', isSavingDraft: false, isRegenerating: false, isRewritingCaption: false, isRefreshingMetrics: false,
         authEmail: '', loggingOut: false, isChangingPassword: false,
         passwordForm: { current: '', next: '', confirm: '' },
         loadedPageId: null, isLoadingPage: false, requestIds: {}, dataErrors: {},
@@ -43,6 +50,16 @@ function autoPosterApp() {
         get aiMissingKey() {
             const missing = this.usedProviders.find(p => !this.settings[`${p}_api_key`]);
             return missing ? this.providerLabel(missing) : '';
+        },
+        openaiCustomModel: { text: false, image: false },
+        openaiModelChoice(role) {
+            const value = this.settings[`openai_${role}_model`];
+            return !this.openaiCustomModel[role] && OPENAI_MODELS[role].includes(value) ? value : '__custom';
+        },
+        chooseOpenaiModel(role, value) {
+            this.openaiCustomModel[role] = value === '__custom';
+            if (value !== '__custom') this.settings[`openai_${role}_model`] = value;
+            this.settingsDirty = true;
         },
         providerSnapshot(p) {
             return JSON.stringify(p === 'openai'
@@ -71,6 +88,7 @@ function autoPosterApp() {
             this.requestIds.detail = (this.requestIds.detail || 0) + 1;
             this.currentPost = post;
             this.draftSnapshot = JSON.stringify([post.visual_title, post.caption]);
+            this.patchFeedItem(post);
         },
         leaveDraft(action) {
             if (!this.draftDirty) { action(); return; }
@@ -268,8 +286,10 @@ function autoPosterApp() {
             gemini_text_model: 'gemini-3.8-flash',
             gemini_image_model: 'gemini-3.1-flash-image',
             openai_api_key: '',
-            openai_text_model: 'gpt-5-mini',
-            openai_image_model: 'gpt-image-1',
+            openai_text_model: 'gpt-6.1-sol',
+            openai_image_model: 'gpt-image-2.5-flare',
+            text_reasoning: 'low',
+            openai_image_quality: 'medium',
             text_provider: 'gemini',
             image_provider: 'gemini',
             auto_topic_evolution: 'true',
@@ -302,7 +322,12 @@ function autoPosterApp() {
         postsHasMore: false,
         postsPerPage: 30,
         isLoadingMore: false,
-        captionExpanded: false,
+        editorOpen: false,   // caption editor panel under the topic picker, folded by default
+        // Home feed under the Studio: every generated post, newest first, loaded in
+        // small batches as the user scrolls down. 'all' = every Fanspage.
+        feed: { items: [], hasMore: true, loading: false, error: '', scope: 'all', total: 0, expanded: {} },
+        feedPerPage: 10,
+        feedRequestId: 0,
         analyticsSummary: {
             total_posts: 0,
             total_reach: 0,
@@ -319,6 +344,11 @@ function autoPosterApp() {
         isSyncing: false,
         isOptimizing: false,
         isTestingGemini: false,
+        // Email alerts & database backups (Pengaturan)
+        notifyRecipient: '',
+        isTestingEmail: false,
+        backups: { items: [], keep_days: 14 },
+        isBackingUp: false,
         isTestingOpenai: false,
 
 
@@ -359,6 +389,7 @@ function autoPosterApp() {
             if (this.pages.length === 0) {
                 this.activeTab = 'pages';   // nothing works without a Fanspage
             }
+            this.installFeedObserver();
         },
 
         // ---------- fanspage management ----------
@@ -524,7 +555,7 @@ function autoPosterApp() {
             if (this.savingPageId) return;
             this.savingPageId = page.id;
             try {
-                const before = JSON.stringify([page.content_language, page.aspect_ratio, page.auto_post_times, page.autopilot_enabled, page.is_active]);
+                const before = JSON.stringify([page.content_language, page.aspect_ratio, page.color_theme, page.auto_post_times, page.autopilot_enabled, page.is_active]);
                 const res = await fetch(`/api/pages/${page.id}`, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
@@ -532,6 +563,7 @@ function autoPosterApp() {
                         name: page.name,
                         content_language: page.content_language,
                         aspect_ratio: page.aspect_ratio,
+                        color_theme: page.color_theme,
                         auto_post_times: page.auto_post_times,
                         autopilot_enabled: page.autopilot_enabled,
                         is_active: page.is_active
@@ -539,7 +571,7 @@ function autoPosterApp() {
                 });
                 const data = await res.json();
                 if (data.success) {
-                    page.dirty = before !== JSON.stringify([page.content_language, page.aspect_ratio, page.auto_post_times, page.autopilot_enabled, page.is_active]);
+                    page.dirty = before !== JSON.stringify([page.content_language, page.aspect_ratio, page.color_theme, page.auto_post_times, page.autopilot_enabled, page.is_active]);
                     await this.fetchScheduleStatus();
                     this.showToast(`Pengaturan '${page.name}' disimpan.`);
                 } else {
@@ -660,6 +692,10 @@ function autoPosterApp() {
             if (this.activeTab !== tab) {
                 this.activeTab = tab;
                 this.$nextTick(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
+            }
+            if (tab === 'settings') {
+                this.fetchBackups();
+                this.fetchNotifyInfo();
             }
             if (tab === 'replies') {
                 if (!this.replyFormDirty) this.syncReplyForm();
@@ -885,6 +921,52 @@ function autoPosterApp() {
             }
         },
 
+        // ---------- email alerts & backups ----------
+        async fetchNotifyInfo() {
+            try {
+                const res = await fetch('/api/notifications');
+                if (res.ok) this.notifyRecipient = (await res.json()).recipient || '';
+            } catch (err) { /* placeholder only */ }
+        },
+        async testEmail() {
+            if (this.isTestingEmail) return;
+            this.isTestingEmail = true;
+            try {
+                // The test uses what the server has, so save the form first.
+                if (this.settingsDirty && !(await this.saveSettings({ silent: true }))) return;
+                const res = await fetch('/api/notifications/test', { method: 'POST' });
+                const data = await res.json();
+                this.showToast(data.message, data.success ? 'success' : 'error');
+                this.fetchNotifyInfo();
+            } catch (err) {
+                this.showToast('Gagal menghubungi server.', 'error');
+            } finally {
+                this.isTestingEmail = false;
+            }
+        },
+        async fetchBackups() {
+            try {
+                const res = await fetch('/api/backups');
+                if (res.ok) this.backups = await res.json();
+            } catch (err) {
+                console.error('Error loading backups:', err);
+            }
+        },
+        async makeBackup() {
+            if (this.isBackingUp) return;
+            this.isBackingUp = true;
+            try {
+                const res = await fetch('/api/backups', { method: 'POST' });
+                const data = await res.json();
+                this.showToast(data.message, data.success ? 'success' : 'error');
+                await this.fetchBackups();
+            } catch (err) {
+                this.showToast('Gagal menghubungi server.', 'error');
+            } finally {
+                this.isBackingUp = false;
+            }
+        },
+
         async fetchScheduleStatus() {
             try {
                 const res = await fetch('/api/scheduler/status');
@@ -1052,6 +1134,7 @@ function autoPosterApp() {
                 const data = await this.scopedData('posts', `/api/posts${this.pageQuery()}${sep}limit=${this.postsPerPage}&offset=${offset}&search=${encodeURIComponent(this.historySearch)}&status=${encodeURIComponent(this.historyStatus)}`);
                 if (!data) return;
                 this.postsList = append ? [...this.postsList, ...data.items] : data.items;
+                if (!append) this.resetFeed();
                 this.postsTotal = data.total;
                 this.postsHasMore = data.has_more;
                 // The list is a summary; the Studio needs the full record.
@@ -1061,6 +1144,72 @@ function autoPosterApp() {
             } catch (err) {
                 console.error('Error loading posts:', err);
             }
+        },
+
+        // ---------- home feed (infinite scroll) ----------
+        feedUrl(offset) {
+            const page = this.feed.scope === 'page' && this.activePageId ? `&page=${this.activePageId}` : '';
+            return `/api/posts?with_caption=true&limit=${this.feedPerPage}&offset=${offset}${page}`;
+        },
+        setFeedScope(scope) {
+            if (this.feed.scope === scope) return;
+            this.feed.scope = scope;
+            this.resetFeed();
+        },
+        resetFeed() {
+            this.feedRequestId++;   // a batch still in flight belongs to the old list
+            this.feed = { ...this.feed, items: [], hasMore: true, loading: false, error: '', expanded: {} };
+            this.loadFeed();
+        },
+        async loadFeed() {
+            if (this.feed.loading || !this.feed.hasMore) return;
+            const id = this.feedRequestId;
+            this.feed.loading = true;
+            this.feed.error = '';
+            try {
+                const res = await fetch(this.feedUrl(this.feed.items.length));
+                if (!res.ok) throw new Error('Gagal memuat postingan.');
+                const data = await res.json();
+                if (id !== this.feedRequestId) return;
+                // A post generated meanwhile shifts the offsets by one: skip repeats.
+                const seen = new Set(this.feed.items.map(p => p.id));
+                this.feed.items = [...this.feed.items, ...data.items.filter(p => !seen.has(p.id))];
+                this.feed.total = data.total;
+                this.feed.hasMore = data.has_more && data.items.length > 0;
+            } catch (err) {
+                if (id === this.feedRequestId) this.feed.error = err.message || 'Gagal memuat postingan.';
+            } finally {
+                if (id === this.feedRequestId) {
+                    this.feed.loading = false;
+                    // A tall screen can still show the bottom after a batch: keep going.
+                    if (!this.feed.error) this.$nextTick(() => { if (this.feedSentinelVisible()) this.loadFeed(); });
+                }
+            }
+        },
+        feedSentinelVisible() {
+            const el = this.$refs?.feedSentinel;
+            if (!el || this.activeTab !== 'generator' || typeof window === 'undefined') return false;
+            const box = el.getBoundingClientRect();
+            return box.height > 0 && box.top < window.innerHeight + 600;
+        },
+        installFeedObserver() {
+            const el = this.$refs?.feedSentinel;
+            if (!el || typeof IntersectionObserver === 'undefined') return;
+            new IntersectionObserver(entries => {
+                if (entries.some(e => e.isIntersecting) && this.activeTab === 'generator') this.loadFeed();
+            }, { rootMargin: '0px 0px 600px 0px' }).observe(el);
+        },
+        patchFeedItem(post) {
+            const i = this.feed.items.findIndex(p => p.id === post.id);
+            if (i >= 0) this.feed.items[i] = { ...this.feed.items[i], ...post };
+        },
+        // The post open in the editor is shown with its live (possibly unsaved) edits.
+        get feedPosts() {
+            const open = this.currentPost;
+            return this.feed.items.map(p => (open && open.id === p.id ? { ...p, ...open } : p));
+        },
+        feedPage(post) {
+            return this.pages.find(p => p.id === post.page_id) || null;
         },
 
         async loadMorePosts() {
@@ -1081,6 +1230,30 @@ function autoPosterApp() {
             }
         },
 
+        // ---------- live Facebook numbers ----------
+        fmtCount(n) { return (Number(n) || 0).toLocaleString('id-ID'); },
+        metricsStale(post) {
+            if (!post || post.status !== 'published') return false;
+            const checked = post.metrics?.last_checked_at;
+            return !checked || Date.now() - new Date(checked).getTime() > 10 * 60 * 1000;
+        },
+        async refreshPostMetrics(post, { silent = false } = {}) {
+            if (!post || this.isRefreshingMetrics) return;
+            this.isRefreshingMetrics = true;
+            try {
+                const res = await fetch(`/api/posts/${post.id}/metrics/refresh`, { method: 'POST' });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.message || data.detail || 'Gagal mengambil angka dari Facebook.');
+                if (this.currentPost?.id === post.id) this.currentPost.metrics = data.metrics;
+                this.patchFeedItem({id: post.id, metrics: data.metrics});
+                if (!silent) this.showToast('Angka terbaru dari Facebook dimuat.');
+            } catch (err) {
+                if (!silent) this.showToast(err.message || 'Gagal menghubungi server.', 'error');
+            } finally {
+                this.isRefreshingMetrics = false;
+            }
+        },
+
         async openInStudio(post, { silent = false, discard = false } = {}) {
             if (this.draftDirty && !discard) {
                 this.leaveDraft(() => this.openInStudio(post, {silent, discard: true})); return;
@@ -1094,8 +1267,10 @@ function autoPosterApp() {
                 this.showToast('Gagal memuat isi postingan.', 'error');
                 return;
             }
-            this.captionExpanded = false;
+            // Live post: show today's numbers, not last night's snapshot.
+            if (this.metricsStale(this.currentPost)) this.refreshPostMetrics(this.currentPost, { silent: true });
             if (!silent) {
+                this.editorOpen = true;   // opened on purpose: the user wants to edit it
                 this.switchTab('generator');
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             }
@@ -1114,7 +1289,6 @@ function autoPosterApp() {
 
             this.isGenerating = true;
             this.genStep = 1;
-            this.captionExpanded = false;
 
             const startedAt = Date.now();
             const ticker = setInterval(() => {

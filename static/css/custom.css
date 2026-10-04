@@ -157,6 +157,57 @@ button:disabled { cursor: not-allowed; opacity: .55; }
     font-weight: 500;
 }
 
+/* Live post counts, laid out like the Facebook feed */
+.fb-counts {
+    padding: 10px 16px 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: #b0b3b8;
+    font-size: 13px;
+}
+
+.fb-like-badge {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #1877f2;
+    color: #fff;
+    font-size: 9px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* App-only strip under the post: views and reach from Insights */
+.fb-insights {
+    padding: 8px 16px;
+    border-top: 1px solid #2f3031;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 16px;
+    color: #b0b3b8;
+    font-size: 13px;
+}
+
+.fb-insights strong { color: #e4e6eb; font-weight: 600; }
+.fb-insights-time { margin-left: auto; font-size: 12px; }
+
+.fb-insights-refresh {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 6px;
+    border: 1px solid #3a3b3c;
+    color: #e4e6eb;
+    font-size: 12px;
+}
+
+.fb-insights-refresh:hover:not(:disabled) { background: #3a3b3c; }
+.fb-insights-refresh:disabled { opacity: 0.6; }
+
 /* Smooth Animations */
 @keyframes pulse-glow {
     0%, 100% { box-shadow: 0 0 15px rgba(245, 158, 11, 0.2); }
@@ -182,3 +233,24 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 ::-webkit-scrollbar-thumb:hover {
     background: #374151;
 }
+
+/* Home feed: open a post in the Studio, or on Facebook */
+.fb-feed-actions {
+    display: flex;
+    gap: 4px;
+    padding: 6px 8px;
+    border-top: 1px solid #2f3031;
+}
+.fb-feed-actions > * {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px;
+    border-radius: 6px;
+    color: #b0b3b8;
+    font-size: 13px;
+    font-weight: 600;
+}
+.fb-feed-actions > *:hover { background: #3a3b3c; color: #e4e6eb; }

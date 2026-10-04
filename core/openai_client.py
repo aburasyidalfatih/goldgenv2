@@ -53,8 +53,31 @@ def orientation(aspect_ratio: str) -> str:
     return "square"
 
 
-def complete_json(api_key: str, model: str, system: str, user: str, temperature: float) -> str:
-    """Returns the raw JSON text produced by a chat model."""
+def _post_dropping_unsupported(url: str, api_key: str, body: dict, optional: tuple, timeout: int):
+    """
+    POSTs `body`; when the model rejects one of the `optional` parameters (e.g. a
+    reasoning model refusing `temperature`, or a non-reasoning model refusing
+    `reasoning_effort`), drops that parameter and tries again.
+    """
+    while True:
+        response = requests.post(url, headers=_headers(api_key), json=body, timeout=timeout)
+        if response.status_code != 400:
+            return response
+        message = _error_message(response).lower()
+        rejected = next((key for key in optional if key in body and key in message), None)
+        if rejected is None:
+            return response
+        logger.info(f"OpenAI model rejected '{rejected}'; retrying without it.")
+        body.pop(rejected)
+
+
+def complete_json(api_key: str, model: str, system: str, user: str, temperature: float,
+                  reasoning: str | None = None) -> str:
+    """
+    Returns the raw JSON text produced by a chat model. `reasoning` ('low',
+    'medium', 'high') caps how much a reasoning model thinks before answering;
+    thinking tokens are billed as output, so a low effort makes captions cheaper.
+    """
     body = {
         "model": model,
         "messages": [
@@ -64,13 +87,10 @@ def complete_json(api_key: str, model: str, system: str, user: str, temperature:
         "response_format": {"type": "json_object"},
         "temperature": temperature,
     }
-    response = requests.post(f"{API_BASE}/chat/completions", headers=_headers(api_key),
-                             json=body, timeout=TEXT_TIMEOUT)
-    # Reasoning models (gpt-5, o-series) only accept the default temperature.
-    if response.status_code == 400 and "temperature" in _error_message(response).lower():
-        body.pop("temperature")
-        response = requests.post(f"{API_BASE}/chat/completions", headers=_headers(api_key),
-                                 json=body, timeout=TEXT_TIMEOUT)
+    if reasoning:
+        body["reasoning_effort"] = reasoning
+    response = _post_dropping_unsupported(f"{API_BASE}/chat/completions", api_key, body,
+                                          ("temperature", "reasoning_effort"), TEXT_TIMEOUT)
     _raise_for_error(response)
 
     choice = (response.json().get("choices") or [{}])[0]
@@ -79,17 +99,24 @@ def complete_json(api_key: str, model: str, system: str, user: str, temperature:
     return ((choice.get("message") or {}).get("content") or "").strip()
 
 
-def generate_image_bytes(api_key: str, model: str, prompt: str, aspect_ratio: str) -> bytes:
-    """Renders one image and returns its encoded bytes (PNG/JPEG/WebP)."""
+def generate_image_bytes(api_key: str, model: str, prompt: str, aspect_ratio: str,
+                         quality: str | None = None) -> bytes:
+    """
+    Renders one image and returns its encoded bytes (PNG/JPEG/WebP). `quality`
+    ('low', 'medium', 'high', 'auto') sets how many image tokens are spent, which
+    is most of the price: 'auto' lets the model pick, often an expensive level.
+    """
     is_dalle3 = model.lower().startswith("dall-e-3")
     sizes = DALLE3_SIZES if is_dalle3 else GPT_IMAGE_SIZES
     body = {"model": model, "prompt": prompt, "n": 1, "size": sizes[orientation(aspect_ratio)]}
     if is_dalle3:
         body["prompt"] = prompt[:DALLE3_PROMPT_LIMIT]
         body["response_format"] = "b64_json"   # gpt-image models always return base64
+    elif quality:
+        body["quality"] = quality
 
-    response = requests.post(f"{API_BASE}/images/generations", headers=_headers(api_key),
-                             json=body, timeout=IMAGE_TIMEOUT)
+    response = _post_dropping_unsupported(f"{API_BASE}/images/generations", api_key, body,
+                                          ("quality",), IMAGE_TIMEOUT)
     _raise_for_error(response)
 
     data = response.json().get("data") or []

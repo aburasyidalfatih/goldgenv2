@@ -51,3 +51,20 @@ test('failed refresh preserves existing data and exposes retry state',async()=>{
     const s=app(async()=>({ok:false})); s.topics=[{id:7}];
     await s.fetchTopics(); assert.equal(s.topics[0].id,7); assert.ok(s.dataErrors.topics);
 });
+test('home feed appends older batches, skips repeats and ignores a stale batch',async()=>{
+    const urls=[]; const pending=[];
+    const s=app(url=>{urls.push(url); return new Promise(r=>pending.push(r));});
+    const batch=(ids,more)=>({ok:true,json:async()=>({items:ids.map(id=>({id})),total:5,has_more:more})});
+    const first=s.loadFeed(); pending[0](batch([5,4,3],true)); await first;
+    assert.match(urls[0],/offset=0/); assert.match(urls[0],/with_caption=true/); assert.doesNotMatch(urls[0],/page=/);
+    const second=s.loadFeed(); pending[1](batch([3,2,1],false)); await second;
+    assert.match(urls[1],/offset=3/);
+    assert.equal(s.feed.items.map(p=>p.id).join(),"5,4,3,2,1");
+    assert.equal(s.feed.hasMore,false);
+    await s.loadFeed(); assert.equal(urls.length,2);   // nothing older left
+    s.activePageId=9; s.setFeedScope('page');            // starts a fresh list...
+    assert.match(urls[2],/page=9/);
+    s.resetFeed();                                       // ...superseded before it answers
+    pending[2](batch([99],false)); await Promise.resolve(); await Promise.resolve();
+    assert.equal(s.feed.items.some(p=>p.id===99),false);
+});

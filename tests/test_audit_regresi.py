@@ -13,7 +13,7 @@ import app as app_module
 from app import PublishRequest, publish_post_endpoint
 from config import IMAGES_DIR
 from core.feedback_loop import (
-    STALE_TOPIC_CAP,
+    BASE_TOPIC_WEIGHT_FLOOR,
     get_next_recommended_topic,
     optimize_topic_weights,
     page_topic_weights,
@@ -125,17 +125,13 @@ def _porsi(db, page_id, topic, n=3000):
     return pilihan[topic.id] / n, (sum(lain) / len(lain) / n) if lain else 0.0
 
 
-def test_pemenang_tunggal_diproduksi_lebih_sering(client, make_page, make_post, topics, db):
-    """
-    Regresi: bila hanya satu topik tayang minggu ini, pemenang dengan reach 8x
-    rata-rata halaman dulu diproduksi LEBIH JARANG dari topik lain.
-    """
+def test_pemenang_reach_diproduksi_jauh_lebih_sering(client, make_page, make_post,
+                                                     finish_test_phase, topics, db):
+    """Setelah semua topik dasar teruji, topik dengan reach terluas mendominasi produksi."""
     page = make_page("111")
-    for i in range(15):
-        make_post(page["id"], topics[0], days_ago=20 + i, reach=2500)
     pemenang = topics[5]
-    make_post(page["id"], pemenang, days_ago=2, reach=20000)
-    make_post(page["id"], pemenang, days_ago=4, reach=22000)
+    finish_test_phase(page["id"], reach=2500, skip={pemenang.id})
+    make_post(page["id"], pemenang, days_ago=10, reach=20000)
 
     optimize_topic_weights(db, 7, page["id"])
     porsi_pemenang, porsi_lain = _porsi(db, page["id"], pemenang)
@@ -144,51 +140,54 @@ def test_pemenang_tunggal_diproduksi_lebih_sering(client, make_page, make_post, 
     assert porsi_pemenang > 2 * porsi_lain, f"{porsi_pemenang:.1%} vs {porsi_lain:.1%}"
 
 
-def test_pemenang_tunggal_di_halaman_baru_tetap_diunggulkan(client, make_page, make_post,
-                                                           topics, db):
-    """Tanpa riwayat pembanding sama sekali (minggu pertama sebuah halaman)."""
+def test_pemenang_yang_diuji_paling_awal_tidak_dikalahkan(client, make_page, make_post,
+                                                         finish_test_phase, topics, db):
+    """
+    Regresi desain lama: tahap uji berlangsung berminggu-minggu; pemenang yang kebetulan
+    diuji di minggu pertama dulu dibatasi di bawah topik biasa yang diuji belakangan.
+    """
     page = make_page("111")
     pemenang = topics[2]
-    make_post(page["id"], pemenang, days_ago=1, reach=5000)
+    make_post(page["id"], pemenang, days_ago=30, reach=9000)            # diuji paling awal
+    finish_test_phase(page["id"], reach=1500, days_ago=3, skip={pemenang.id})
 
     optimize_topic_weights(db, 7, page["id"])
     w = page_topic_weights(db, page["id"], topics)
 
-    assert w[pemenang.id] > STALE_TOPIC_CAP + 0.3
-    porsi_pemenang, porsi_lain = _porsi(db, page["id"], pemenang)
-    assert porsi_pemenang > porsi_lain
+    assert w[pemenang.id] == max(w.values())
+    assert w[pemenang.id] > 1.5
 
 
-def test_pemenang_tunggal_yang_jeblok_tidak_didongkrak(client, make_page, make_post, topics, db):
-    """Satu-satunya topik minggu ini, tapi hasilnya jauh di bawah biasanya."""
+def test_topik_yang_jeblok_tidak_didongkrak(client, make_page, make_post,
+                                             finish_test_phase, topics, db):
+    """Reach jauh di bawah rata-rata halaman: bobot turun ke lantai, tidak dinaikkan."""
     page = make_page("111")
-    for i in range(10):
-        make_post(page["id"], topics[1], days_ago=15 + i, reach=8000)
     jeblok = topics[4]
-    make_post(page["id"], jeblok, days_ago=2, reach=300)
+    finish_test_phase(page["id"], reach=8000, skip={jeblok.id})
+    make_post(page["id"], jeblok, days_ago=10, reach=300)
 
     optimize_topic_weights(db, 7, page["id"])
     w = page_topic_weights(db, page["id"], topics)
 
-    assert w[jeblok.id] == 1.0, "tetap di atas topik dorman, tapi tanpa dongkrak"
+    assert w[jeblok.id] == BASE_TOPIC_WEIGHT_FLOOR
 
 
 # ------------------------------------------------------- kartu pemenang
 
 
-def test_kartu_pemenang_sama_dengan_yang_diprioritaskan(client, make_page, make_post, topics, db):
+def test_kartu_pemenang_sama_dengan_yang_diprioritaskan(client, make_page, make_post,
+                                                       finish_test_phase, topics, db, monkeypatch):
     """Regresi: kartu dulu memakai total skor seumur hidup dan bisa bertentangan."""
+    import core.feedback_loop as feedback
     page = make_page("111")
-    for i in range(15):
-        make_post(page["id"], topics[0], days_ago=20 + i, reach=2500)
-    make_post(page["id"], topics[5], days_ago=2, reach=20000)
-    make_post(page["id"], topics[5], days_ago=4, reach=22000)
+    finish_test_phase(page["id"], reach=2500, skip={topics[5].id})
+    make_post(page["id"], topics[5], days_ago=4, reach=21000)
     optimize_topic_weights(db, 7, page["id"])
+    monkeypatch.setattr(feedback.random, "random", lambda: 0.99)   # tanpa eksplorasi
 
     kartu = client.get(f"/api/analytics/summary?page={page['id']}").json()["winning_topic"]
-    paling_sering = Counter(
-        get_next_recommended_topic(db, page["id"]).title for _ in range(2000)
-    ).most_common(1)[0][0]
+    pertama_dirotasi = get_next_recommended_topic(db, page["id"]).title
 
     assert kartu == topics[5].title
-    assert kartu == paling_sering
+    assert kartu == pertama_dirotasi
+

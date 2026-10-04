@@ -163,15 +163,22 @@ def publish_photo_to_page(page_id: str, access_token: str, image_path: str, capt
         logger.error(f"Failed to publish photo to Facebook: {e}")
         return {"success": False, "message": str(e)}
 
+# (metrics requested, metric used as reach, metric used as total views), newest first.
 class MetricsUnavailable(Exception):
     """Facebook did not return a post's metrics (expired token, rate limit, timeout)."""
+
+
+INSIGHT_METRIC_SETS = (
+    ("post_media_view,post_total_media_view_unique", "post_total_media_view_unique", "post_media_view"),
+    ("post_impressions,post_impressions_unique", "post_impressions_unique", "post_impressions"),
+)
 
 
 def fetch_post_metrics(page_id: str, access_token: str, fb_post_id: str) -> dict:
     """
     Fetches engagement and reach metrics using dual-layer architecture:
     Layer 1: Instant public reactions, comments, shares
-    Layer 2: Insights (views) if accessible
+    Layer 2: Insights views and unique viewers (reach), if the token has read_insights
 
     Raises MetricsUnavailable when Layer 1 fails, so the caller keeps the stored
     numbers instead of overwriting them with zeros. When only Insights fails,
@@ -208,36 +215,33 @@ def fetch_post_metrics(page_id: str, access_token: str, fb_post_id: str) -> dict
     if "shares" in data:
         metrics["shares"] = data["shares"].get("count", 0)
 
-    # Layer 2: Deep Insights. Meta retired post_impressions / post_impressions_unique
-    # on 2025-11-15; their replacements are the "views" metrics:
-    # reach == unique viewers (post_total_media_view_unique),
-    # impressions == total views (post_media_view).
-    try:
-        url = f"{BASE_GRAPH_URL}/{fb_post_id}/insights"
-        params = {
-            "metric": "post_media_view,post_total_media_view_unique",
-            "period": "lifetime",
-            "access_token": access_token
-        }
-        r = requests.get(url, params=params, timeout=10)
-        insights_data = r.json()
-
+    # Layer 2: Insights. Meta retired post_impressions / post_impressions_unique
+    # (they now fail with "must be a valid insights metric") in favour of "views":
+    # post_media_view = total views, post_total_media_view_unique = people who saw
+    # it (our reach). The old names stay as a fallback for older API versions.
+    for metric_names, reach_metric, views_metric in INSIGHT_METRIC_SETS:
+        try:
+            r = requests.get(f"{BASE_GRAPH_URL}/{fb_post_id}/insights",
+                             params={"metric": metric_names, "access_token": access_token},
+                             timeout=10)
+            insights_data = r.json()
+        except Exception as e:
+            logger.warning(f"Error fetching Layer 2 insights: {e}")
+            break
         if "error" in insights_data:
-            logger.warning(
-                f"Insights unavailable for {fb_post_id}: "
-                f"{insights_data['error'].get('message')}"
-            )
+            logger.warning(f"Insights '{metric_names}' unavailable for {fb_post_id}: "
+                           f"{insights_data['error'].get('message')}")
+            continue
         for item in insights_data.get("data", []):
-            m_name = item.get("name")
-            val = 0
-            if item.get("values"):
-                val = item["values"][0].get("value", 0) or 0
-            if m_name == "post_media_view":
+            # A metric can come back once per period (lifetime, day, ...): use lifetime.
+            if item.get("period") not in (None, "lifetime"):
+                continue
+            val = (item.get("values") or [{}])[0].get("value", 0) or 0
+            if item.get("name") == views_metric:
                 metrics["impressions"] = val
-            elif m_name == "post_total_media_view_unique":
+            elif item.get("name") == reach_metric:
                 metrics["reach"] = val
-    except Exception as e:
-        logger.warning(f"Error fetching Layer 2 insights: {e}")
+        break
 
     # No synthetic reach: if Insights is unreachable (missing read_insights
     # permission), reach stays unknown rather than reporting a fabricated number.

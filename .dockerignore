@@ -10,6 +10,7 @@ venv/
 .gitignore
 .env
 data/
+backups/
 storage/generated_images/*
 !storage/generated_images/.gitkeep
 *.log
