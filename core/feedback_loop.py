@@ -3,6 +3,7 @@ import statistics
 import logging
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import or_
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 from database.models import ContentTopic, Post, PostMetric, PageTopicWeight
 from core.fb_client import fetch_post_metrics
@@ -170,15 +171,19 @@ def baseline_weight_for(topic: ContentTopic) -> float:
 
 def get_page_weight(db: Session, page_id: int, topic: ContentTopic) -> PageTopicWeight:
     """Per-page learning row, created on first use with the neutral baseline."""
-    row = (
-        db.query(PageTopicWeight)
-        .filter(PageTopicWeight.page_id == page_id, PageTopicWeight.topic_id == topic.id)
-        .first()
+    query = db.query(PageTopicWeight).filter(
+        PageTopicWeight.page_id == page_id, PageTopicWeight.topic_id == topic.id
     )
+    row = query.first()
     if not row:
-        row = PageTopicWeight(page_id=page_id, topic_id=topic.id, weight=baseline_weight_for(topic))
-        db.add(row)
-        db.flush()
+        # INSERT OR IGNORE: a manual generate and the autopilot picking the same
+        # topic at once used to both insert and fail on the UNIQUE constraint.
+        db.execute(
+            sqlite_insert(PageTopicWeight)
+            .values(page_id=page_id, topic_id=topic.id, weight=baseline_weight_for(topic))
+            .on_conflict_do_nothing()
+        )
+        row = query.first()
     return row
 
 def calculate_metric_score(reactions: int, comments: int, shares: int, reach: int) -> float:
@@ -229,13 +234,9 @@ def update_all_post_metrics(
     updated = []
     for post in published_posts:
         try:
+            # Raises when Facebook returns nothing usable; the stored numbers
+            # are then kept instead of being reset to zero.
             m_data = fetch_post_metrics(page_id, access_token, post.fb_post_id)
-            score = calculate_metric_score(
-                m_data["reactions"],
-                m_data["comments"],
-                m_data["shares"],
-                m_data["reach"]
-            )
 
             metric = db.query(PostMetric).filter(PostMetric.post_id == post.id).first()
             if not metric:
@@ -245,11 +246,22 @@ def update_all_post_metrics(
                 )
                 db.add(metric)
 
+            # Insights unavailable this time (None): keep the last known reach.
+            reach = m_data["reach"] if m_data["reach"] is not None else (metric.reach or 0)
+            impressions = (m_data["impressions"] if m_data["impressions"] is not None
+                           else (metric.impressions or 0))
+            score = calculate_metric_score(
+                m_data["reactions"],
+                m_data["comments"],
+                m_data["shares"],
+                reach
+            )
+
             metric.reactions = m_data["reactions"]
             metric.comments = m_data["comments"]
             metric.shares = m_data["shares"]
-            metric.reach = m_data["reach"]
-            metric.impressions = m_data["impressions"]
+            metric.reach = reach
+            metric.impressions = impressions
             metric.calculated_score = score
             metric.last_checked_at = datetime.now(timezone.utc)
 
@@ -257,7 +269,7 @@ def update_all_post_metrics(
                 "post_id": post.id,
                 "title": post.visual_title,
                 "score": score,
-                "reach": m_data["reach"]
+                "reach": reach
             })
         except Exception as e:
             logger.error(f"Error updating metrics for post {post.id}: {e}")

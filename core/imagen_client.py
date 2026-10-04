@@ -4,7 +4,7 @@ import logging
 from PIL import Image
 from google import genai
 from google.genai import types
-from config import IMAGES_DIR, DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_FALLBACK_MODEL
+from config import IMAGES_DIR, DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_FALLBACK_MODEL, GEMINI_IMAGE_TIMEOUT_MS
 from core import openai_client
 
 logger = logging.getLogger(__name__)
@@ -24,12 +24,16 @@ def _save_jpeg(image_bytes: bytes, filepath) -> None:
     img.save(filepath, format="JPEG", quality=95)
 
 
-def _generate_via_gemini(client, model_name: str, prompt: str, filepath) -> bool:
+def _generate_via_gemini(client, model_name: str, prompt: str, aspect_ratio: str, filepath) -> bool:
     """Native Gemini image model route. Returns True if an image was saved."""
     response = client.models.generate_content(
         model=model_name,
         contents=prompt,
-        config=types.GenerateContentConfig(response_modalities=["IMAGE"])
+        # Without image_config Gemini image models render square posters.
+        config=types.GenerateContentConfig(
+            response_modalities=["IMAGE"],
+            image_config=types.ImageConfig(aspect_ratio=aspect_ratio),
+        )
     )
     for candidate in response.candidates or []:
         for part in candidate.content.parts or []:
@@ -89,7 +93,8 @@ def generate_poster_image(
 
     if not api_key:
         raise ValueError("Gemini API Key belum diisi.")
-    client = genai.Client(api_key=api_key)
+    client = genai.Client(api_key=api_key,
+                          http_options=types.HttpOptions(timeout=GEMINI_IMAGE_TIMEOUT_MS))
 
     is_gemini_primary = "gemini" in model_name.lower()
     if is_gemini_primary:
@@ -103,7 +108,7 @@ def generate_poster_image(
     for route, route_model in (primary, fallback):
         try:
             if route is _generate_via_gemini:
-                saved = _generate_via_gemini(client, route_model, full_prompt, filepath)
+                saved = _generate_via_gemini(client, route_model, full_prompt, aspect_ratio, filepath)
             else:
                 saved = _generate_via_imagen(client, route_model, full_prompt, aspect_ratio, filepath)
 

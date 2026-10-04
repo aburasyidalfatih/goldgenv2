@@ -68,6 +68,7 @@ Tab **Komentar** membalas komentar pengikut di **semua postingan** Fanspage, bai
 * **Sekali balas**: setiap komentar dikunci dengan ID uniknya, jadi tidak pernah dibalas dua kali walau pemeriksaan berjalan bersamaan.
 * Balasan sebelumnya ikut diberikan ke AI agar kalimatnya tidak berulang.
 * Memakai penyedia teks yang dipilih di Pengaturan (Gemini atau OpenAI).
+* Saat Fanspage ditambahkan atau diverifikasi ulang, **User Token otomatis ditukar dengan Page Token**. User Token tidak bisa membalas atas nama Fanspage. Page ID juga disimpan dalam bentuk angka walau yang diketik username, agar komentar Fanspage sendiri dikenali.
 * **Izin token yang dibutuhkan**: `pages_read_engagement`, `pages_read_user_content`, `pages_manage_engagement`. Bila kurang, pesan kesalahannya tampil di panel Balasan Otomatis.
 
 ## 🚀 Cara Menjalankan Lokal di Windows
@@ -125,6 +126,19 @@ python scripts/simulasi_konvergensi.py   # 20 minggu siklus pembelajaran
 python scripts/uji_konkurensi.py         # beberapa halaman posting bersamaan
 python scripts/uji_pemulihan.py          # gagal di tengah jalan + backup/restore
 ```
+
+Balas komentar tidak jalan? Jalankan diagnosa ini di server (di Dokploy: `python /app/scripts/cek_balas_komentar.py`). Skrip ini memakai database asli, tetapi tidak mengirim balasan apa pun:
+
+```bash
+python scripts/cek_balas_komentar.py --uji-ai
+```
+
+Skrip ini menampilkan untuk tiap Fanspage:
+
+* sakelar dan mode balasan;
+* error terakhir;
+* jenis token (Page Token atau User Token) dan izinnya;
+* alasan setiap komentar terbaru dibalas atau dilewati.
 
 ---
 

@@ -226,10 +226,14 @@ def validate_variant(raw_topic: dict) -> dict | None:
     if not isinstance(raw_topic, dict):
         return None
 
-    title = (raw_topic.get("title") or "").strip()
-    concept = (raw_topic.get("core_concept") or "").strip()
-    blueprint = (raw_topic.get("visual_blueprint") or "").strip()
-    category = (raw_topic.get("category") or "").strip().title()
+    def text(key: str) -> str:
+        # Models occasionally answer a field with a number or list; never crash on it.
+        return str(raw_topic.get(key) or "").strip()
+
+    title = text("title")
+    concept = text("core_concept")
+    blueprint = text("visual_blueprint")
+    category = text("category").title()
 
     if len(title) < 10 or len(concept) < 40 or len(blueprint) < 40:
         return None
@@ -241,8 +245,8 @@ def validate_variant(raw_topic: dict) -> dict | None:
         "core_concept": concept,
         "visual_blueprint": blueprint,
         "category": category,
-        "base_topic": (raw_topic.get("base_topic") or "").strip(),
-        "why_this_works": (raw_topic.get("why_this_works") or "").strip()[:500],
+        "base_topic": text("base_topic"),
+        "why_this_works": text("why_this_works")[:500],
     }
 
 

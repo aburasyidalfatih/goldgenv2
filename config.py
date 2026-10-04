@@ -25,6 +25,11 @@ DEFAULT_TEXT_MODEL = "gemini-3.8-flash"
 DEFAULT_IMAGE_MODEL = "gemini-3.1-flash-image"
 DEFAULT_IMAGE_FALLBACK_MODEL = "imagen-3.0-generate-002"
 
+# Gemini request timeouts (milliseconds). Without one a stalled call blocks its
+# scheduler job forever, and max_instances=1 then skips every later run.
+GEMINI_TEXT_TIMEOUT_MS = 120_000
+GEMINI_IMAGE_TIMEOUT_MS = 300_000
+
 # Optional OpenAI route (chosen per role in Settings: text_provider / image_provider)
 DEFAULT_OPENAI_TEXT_MODEL = "gpt-5-mini"
 DEFAULT_OPENAI_IMAGE_MODEL = "gpt-image-1"

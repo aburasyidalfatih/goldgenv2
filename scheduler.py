@@ -1,5 +1,6 @@
 import logging
-from datetime import datetime, timezone
+import threading
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -36,6 +37,11 @@ except Exception:
 scheduler = BackgroundScheduler(timezone=SCHEDULER_TZ)
 
 AUTOPOST_JOB_PREFIX = "autopost_"
+CATCHUP_JOB_PREFIX = "catchup_"
+# A posting slot may still run this late (also the cron jobs' misfire_grace_time).
+AUTOPOST_GRACE_SECONDS = 3600
+# Delay before a catch-up post after startup, so a restart loop cannot burst.
+CATCHUP_DELAY_SECONDS = 60
 COMMENT_REPLY_INTERVAL_MINUTES = 10
 
 def get_setting_val(db, key, default=""):
@@ -123,14 +129,10 @@ def auto_generate_and_post_job(page_row_id: int):
         )
         poster_sementara = abspath
 
-        # 4. Publish to this page
-        fb_res = publish_photo_to_page(
-            page_id=page.page_id,
-            access_token=page.access_token,
-            image_path=abspath,
-            caption=content["caption"],
-        )
-
+        # 4. Record the post as "publishing" BEFORE uploading. If the app is stopped
+        # mid-upload (restart, redeploy), startup recovery flags this row as failed
+        # with a "check the page first" warning, instead of a post that may already
+        # be live on Facebook leaving no trace in the dashboard.
         post = Post(
             page_id=page.id,
             topic_id=topic.id,
@@ -141,16 +143,33 @@ def auto_generate_and_post_job(page_row_id: int):
             image_filename=filename,
             image_path=abspath,
             caption=content["caption"],
-            status="published" if fb_res.get("success") else "failed",
-            fb_post_id=fb_res.get("post_id"),
-            fb_post_url=fb_res.get("post_url"),
-            published_at=datetime.now(timezone.utc) if fb_res.get("success") else None,
-            error_message=fb_res.get("message") if not fb_res.get("success") else None,
+            status="publishing",
         )
         db.add(post)
         mark_topic_used(db, topic, page.id)
         db.commit()
         poster_sementara = None   # the row now owns the file
+
+        # 5. Publish to this page
+        try:
+            fb_res = publish_photo_to_page(
+                page_id=page.page_id,
+                access_token=page.access_token,
+                image_path=abspath,
+                caption=content["caption"],
+            )
+        except Exception as e:
+            fb_res = {"success": False, "message": f"Koneksi ke Facebook gagal: {e}"}
+
+        if fb_res.get("success"):
+            post.status = "published"
+            post.fb_post_id = fb_res.get("post_id")
+            post.fb_post_url = fb_res.get("post_url")
+            post.published_at = datetime.now(timezone.utc)
+        else:
+            post.status = "failed"
+            post.error_message = fb_res.get("message")
+        db.commit()
 
         if fb_res.get("success"):
             logger.info(f"[Scheduler] '{page.name}' published: {fb_res.get('post_url')}")
@@ -268,11 +287,21 @@ def topic_evolution_job():
         db.close()
 
 
+# Page edits arrive on several request threads at once; two interleaved rebuilds
+# raced on remove_job (JobLookupError) and could leave an outdated schedule.
+_RELOAD_LOCK = threading.Lock()
+
+
 def reload_autopost_schedule():
     """
     Rebuilds one set of cron jobs per Fanspage from each page's own posting times.
     Safe to call at startup and whenever a page is added or edited.
     """
+    with _RELOAD_LOCK:
+        return _reload_autopost_schedule()
+
+
+def _reload_autopost_schedule():
     db = SessionLocal()
     try:
         pages = db.query(FacebookPage).filter(FacebookPage.is_active.isnot(False)).all()
@@ -306,7 +335,7 @@ def reload_autopost_schedule():
                 args=[page_row_id],
                 id=f"{AUTOPOST_JOB_PREFIX}{page_row_id}_{hour:02d}{minute:02d}",
                 replace_existing=True,
-                misfire_grace_time=3600,
+                misfire_grace_time=AUTOPOST_GRACE_SECONDS,
                 coalesce=True,
                 max_instances=1,
             )
@@ -317,6 +346,54 @@ def reload_autopost_schedule():
     else:
         logger.info("[Scheduler] No Fanspage has autopilot enabled.")
     return scheduled
+
+
+def schedule_missed_autoposts(now: datetime | None = None) -> list[int]:
+    """
+    The cron jobs live in memory, so a slot that passed while the app was down
+    (restart, redeploy, server reboot) would be skipped until the next one. At
+    startup, run each page's most recent slot once if it passed within the grace
+    window and the page has produced no post since.
+    """
+    now = (now or datetime.now(SCHEDULER_TZ)).astimezone(SCHEDULER_TZ)
+    db = SessionLocal()
+    queued = []
+    try:
+        pages = db.query(FacebookPage).filter(FacebookPage.is_active.isnot(False)).all()
+        for page in pages:
+            if not (page.autopilot_enabled and page.access_token):
+                continue
+            times = parse_post_times(page.auto_post_times) or parse_post_times(DEFAULT_SETTINGS["auto_post_times"])
+            missed = None
+            for hour, minute in times:
+                slot = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                if slot > now:
+                    slot -= timedelta(days=1)
+                if (now - slot).total_seconds() <= AUTOPOST_GRACE_SECONDS and (missed is None or slot > missed):
+                    missed = slot
+            if missed is None:
+                continue
+            # Timestamps are stored as naive UTC.
+            missed_utc = missed.astimezone(timezone.utc).replace(tzinfo=None)
+            if page.created_at and page.created_at > missed_utc:
+                continue   # the page did not exist yet at that slot
+            if db.query(Post).filter(Post.page_id == page.id, Post.created_at >= missed_utc).first():
+                continue   # the slot did run
+            scheduler.add_job(
+                auto_generate_and_post_job,
+                "date",
+                run_date=now + timedelta(seconds=CATCHUP_DELAY_SECONDS),
+                args=[page.id],
+                id=f"{CATCHUP_JOB_PREFIX}{page.id}",
+                replace_existing=True,
+                misfire_grace_time=AUTOPOST_GRACE_SECONDS,
+            )
+            queued.append(page.id)
+            logger.warning(f"[Scheduler] '{page.name}' missed its {missed:%H:%M} post while the app was down; "
+                           f"posting it in {CATCHUP_DELAY_SECONDS}s.")
+    finally:
+        db.close()
+    return queued
 
 
 def get_schedule_status(enabled: bool = True) -> dict:
@@ -393,4 +470,5 @@ def start_scheduler():
         max_instances=1,
     )
     scheduler.start()
+    schedule_missed_autoposts()
     logger.info("Background scheduler started successfully.")

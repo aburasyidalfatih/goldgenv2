@@ -135,7 +135,7 @@ def _reset_state():
         session.close()
 
     for job in list(scheduler.get_jobs()):
-        if job.id.startswith("autopost_"):
+        if job.id.startswith(("autopost_", "catchup_")):
             scheduler.remove_job(job.id)
 
 

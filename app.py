@@ -44,6 +44,7 @@ from core.feedback_loop import (
     optimize_all_pages,
     window_performance,
     page_topic_weights,
+    baseline_weight_for,
     mark_topic_used,
 )
 from core.topic_evolution import evolve_topics, retire_topic, reactivate_topic
@@ -420,7 +421,11 @@ class VerifyPageRequest(BaseModel):
 @app.post("/api/pages/verify")
 def verify_page_endpoint(req: VerifyPageRequest):
     """Checks credentials before adding a page, without storing anything."""
-    return verify_page_credentials(req.page_id, req.access_token)
+    result = verify_page_credentials(req.page_id, req.access_token)
+    # The swapped-in Page token is a secret: it is stored when the page is added,
+    # never sent to the browser.
+    result.pop("suggested_page_token", None)
+    return result
 
 @app.patch("/api/pages/{page_row_id}")
 def update_page_endpoint(page_row_id: int, payload: Dict[str, Any], db: Session = Depends(get_db)):
@@ -496,7 +501,10 @@ def list_topics(include_inactive: bool = False, page: Optional[int] = None, db: 
             "topic_key": t.topic_key,
             "title": t.title,
             "core_concept": t.core_concept,
-            "weight": (row.weight if row and row.weight else t.weight),
+            # Without a learning row a page uses the curriculum baseline (the same
+            # value the topic picker uses), never the global, all-pages weight.
+            "weight": ((row.weight if row and row.weight else baseline_weight_for(t)) if page
+                       else t.weight),
             "global_weight": t.weight,
             "posts_count": (row.posts_count if row else 0) if page else t.posts_count,
             "avg_reach": (row.avg_reach if row else 0.0) if page else t.avg_reach,
@@ -909,8 +917,20 @@ def regenerate_image_endpoint(post_id: int, db: Session = Depends(get_db)):
             model_name=image_ai["model"],
             provider=image_ai["provider"],
         )
-        post.image_filename = new_filename
-        post.image_path = new_path
+        # Rendering takes a while: only swap the poster if the post was not
+        # published in the meantime, or the DB would point at a different image
+        # than the one Facebook shows (and that one would be deleted).
+        swapped = (
+            db.query(Post)
+            .filter(Post.id == post_id, Post.status.in_(PUBLISHABLE_STATUSES))
+            .update({Post.image_filename: new_filename, Post.image_path: new_path},
+                    synchronize_session=False)
+        )
+        if swapped != 1:
+            db.rollback()
+            remove_generated_image(new_path)
+            return {"success": False,
+                    "message": "Postingan ini dipublikasikan saat poster baru dibuat; poster yang tayang dipertahankan."}
         db.commit()
         # The replaced poster is no longer referenced anywhere: don't leave it behind.
         if old_image_path and old_image_path != new_path:
@@ -969,8 +989,16 @@ def regenerate_caption_endpoint(post_id: int, db: Session = Depends(get_db)):
     if not caption or caption == template_content(topic_dict, language)["caption"]:
         return {"success": False, "message": "Jawaban AI tidak bisa dipakai. Silakan coba lagi."}
 
-    post.caption = caption
-    post.language = language
+    # Same guard as the poster: the post may have been published while the AI wrote.
+    swapped = (
+        db.query(Post)
+        .filter(Post.id == post_id, Post.status.in_(PUBLISHABLE_STATUSES))
+        .update({Post.caption: caption, Post.language: language}, synchronize_session=False)
+    )
+    if swapped != 1:
+        db.rollback()
+        return {"success": False,
+                "message": "Postingan ini dipublikasikan saat caption baru dibuat; caption yang tayang dipertahankan."}
     db.commit()
     return {"success": True, "caption": caption, "language": language}
 

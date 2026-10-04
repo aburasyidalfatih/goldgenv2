@@ -1473,7 +1473,7 @@
                             <i class="mt-0.5" :class="autopilotPagesCount ? 'fa-solid fa-circle-play' : 'fa-solid fa-circle-pause'"></i>
                             <span x-show="autopilotPagesCount && schedule.next_run" x-cloak>
                                 Aktif — jadwal berikutnya <strong x-text="formatDate(schedule.next_run)"></strong>
-                                (jam: <span x-text="(schedule.times || []).join(', ')"></span>)
+                                (jam: <span x-text="[...new Set((schedule.pages || []).flatMap(p => p.times || []))].sort().join(', ')"></span>)
                             </span>
                             <span x-show="autopilotPagesCount && !schedule.next_run" x-cloak>Aktif — menunggu jadwal berikutnya.</span>
                             <span x-show="!autopilotPagesCount">Belum ada Fanspage dengan autopilot aktif. Nyalakan di tab Fanspage.</span>

@@ -54,6 +54,25 @@ def test_facebook_credentials(page_id: str, access_token: str) -> dict:
                 "message": f"Facebook Error: {error_msg}"
             }
 
+        # GET /{page_id} also succeeds with a *User* token (public Page fields), and
+        # a User token cannot reply to comments as the Page nor see who commented.
+        # The Page's own token answers /me with the Page's id; anything else is a
+        # User token, so swap it for the Page token from /me/accounts.
+        suggested_page_token = None
+        me = requests.get(f"{BASE_GRAPH_URL}/me", params={"fields": "id", "access_token": access_token},
+                          timeout=10).json()
+        if str(me.get("id")) != str(data.get("id")):
+            page_token = _page_token_from_accounts(access_token, data.get("id"))
+            if not page_token:
+                return {
+                    "success": False,
+                    "message": ("Token ini adalah User Token, bukan Page Access Token milik Fanspage ini, "
+                                "dan Fanspage tidak ditemukan di /me/accounts. Gunakan Page Access Token "
+                                "(izin pages_manage_posts, pages_read_engagement, pages_read_user_content, "
+                                "pages_manage_engagement).")
+                }
+            suggested_page_token = page_token
+
         page_name = data.get("name", "Unknown Page")
         picture_url = ""
         if "picture" in data and "data" in data["picture"]:
@@ -66,7 +85,9 @@ def test_facebook_credentials(page_id: str, access_token: str) -> dict:
             "picture_url": picture_url,
             "link": data.get("link", ""),
             "fan_count": data.get("fan_count", 0),
-            "message": f"Terhubung dengan Fanspage: {page_name}"
+            "suggested_page_token": suggested_page_token,
+            "message": (f"Token Pengguna terdeteksi dan diganti dengan Page Token untuk: {page_name}"
+                        if suggested_page_token else f"Terhubung dengan Fanspage: {page_name}")
         }
 
     except Exception as e:
@@ -75,6 +96,21 @@ def test_facebook_credentials(page_id: str, access_token: str) -> dict:
             "success": False,
             "message": f"Koneksi ke Facebook API gagal: {str(e)}"
         }
+
+def _page_token_from_accounts(user_token: str, page_id) -> str | None:
+    """The Page Access Token for `page_id` among the pages a User token manages."""
+    url = f"{BASE_GRAPH_URL}/me/accounts"
+    params = {"fields": "id,name,access_token", "limit": 100, "access_token": user_token}
+    for _ in range(10):   # pagination guard
+        acc = requests.get(url, params=params, timeout=10).json()
+        for item in acc.get("data", []):
+            if str(item.get("id")) == str(page_id) and item.get("access_token"):
+                return item["access_token"]
+        url = (acc.get("paging") or {}).get("next")
+        if not url:
+            return None
+        params = None    # the "next" URL already carries every parameter
+    return None
 
 def publish_photo_to_page(page_id: str, access_token: str, image_path: str, caption: str) -> dict:
     """
@@ -127,18 +163,26 @@ def publish_photo_to_page(page_id: str, access_token: str, image_path: str, capt
         logger.error(f"Failed to publish photo to Facebook: {e}")
         return {"success": False, "message": str(e)}
 
+class MetricsUnavailable(Exception):
+    """Facebook did not return a post's metrics (expired token, rate limit, timeout)."""
+
+
 def fetch_post_metrics(page_id: str, access_token: str, fb_post_id: str) -> dict:
     """
     Fetches engagement and reach metrics using dual-layer architecture:
     Layer 1: Instant public reactions, comments, shares
-    Layer 2: Insights (post_impressions, post_engaged_users) if accessible
+    Layer 2: Insights (views) if accessible
+
+    Raises MetricsUnavailable when Layer 1 fails, so the caller keeps the stored
+    numbers instead of overwriting them with zeros. When only Insights fails,
+    reach/impressions are None ("unknown"), not 0.
     """
     metrics = {
         "reactions": 0,
         "comments": 0,
         "shares": 0,
-        "reach": 0,
-        "impressions": 0
+        "reach": None,
+        "impressions": None
     }
 
     if not fb_post_id:
@@ -153,21 +197,26 @@ def fetch_post_metrics(page_id: str, access_token: str, fb_post_id: str) -> dict
         }
         r = requests.get(url, params=params, timeout=10)
         data = r.json()
-        if "reactions" in data and "summary" in data["reactions"]:
-            metrics["reactions"] = data["reactions"]["summary"].get("total_count", 0)
-        if "comments" in data and "summary" in data["comments"]:
-            metrics["comments"] = data["comments"]["summary"].get("total_count", 0)
-        if "shares" in data:
-            metrics["shares"] = data["shares"].get("count", 0)
     except Exception as e:
-        logger.warning(f"Error fetching Layer 1 metrics: {e}")
+        raise MetricsUnavailable(f"Error fetching Layer 1 metrics: {e}") from e
+    if "error" in data:
+        raise MetricsUnavailable(f"Facebook Error: {data['error'].get('message')}")
+    if "reactions" in data and "summary" in data["reactions"]:
+        metrics["reactions"] = data["reactions"]["summary"].get("total_count", 0)
+    if "comments" in data and "summary" in data["comments"]:
+        metrics["comments"] = data["comments"]["summary"].get("total_count", 0)
+    if "shares" in data:
+        metrics["shares"] = data["shares"].get("count", 0)
 
-    # Layer 2: Deep Insights.
-    # reach == unique people (post_impressions_unique), impressions == total views.
+    # Layer 2: Deep Insights. Meta retired post_impressions / post_impressions_unique
+    # on 2025-11-15; their replacements are the "views" metrics:
+    # reach == unique viewers (post_total_media_view_unique),
+    # impressions == total views (post_media_view).
     try:
         url = f"{BASE_GRAPH_URL}/{fb_post_id}/insights"
         params = {
-            "metric": "post_impressions,post_impressions_unique",
+            "metric": "post_media_view,post_total_media_view_unique",
+            "period": "lifetime",
             "access_token": access_token
         }
         r = requests.get(url, params=params, timeout=10)
@@ -183,15 +232,15 @@ def fetch_post_metrics(page_id: str, access_token: str, fb_post_id: str) -> dict
             val = 0
             if item.get("values"):
                 val = item["values"][0].get("value", 0) or 0
-            if m_name == "post_impressions":
+            if m_name == "post_media_view":
                 metrics["impressions"] = val
-            elif m_name == "post_impressions_unique":
+            elif m_name == "post_total_media_view_unique":
                 metrics["reach"] = val
     except Exception as e:
         logger.warning(f"Error fetching Layer 2 insights: {e}")
 
     # No synthetic reach: if Insights is unreachable (missing read_insights
-    # permission), reach stays 0 rather than reporting a fabricated number.
+    # permission), reach stays unknown rather than reporting a fabricated number.
     return metrics
 
 

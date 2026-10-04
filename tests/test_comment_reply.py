@@ -331,3 +331,85 @@ def test_generate_memakai_penyedia_teks_dan_membatasi_kalimat(monkeypatch):
     assert dipanggil["provider"] == "openai"
     assert "MAKSIMAL 2 kalimat" in dipanggil["system"] and "Info Emas" in dipanggil["system"]
     assert "Dapat 2 butir!" in dipanggil["user"] and "Siap bang." in dipanggil["user"]
+
+
+@pytest.mark.parametrize("skip, dibalas", [("false", True), ("False", True), (False, True),
+                                           ("true", False), (True, False)])
+def test_skip_berupa_teks_dibaca_benar(monkeypatch, skip, dibalas):
+    """Regresi: "skip": "false" (teks) dulu dibaca True, sehingga komentar dilewati selamanya."""
+    monkeypatch.setattr(cr, "complete_json",
+                        lambda *a, **k: json.dumps({"skip": skip, "reason": "", "reply": "Bisa juga bang."}))
+    out = cr.generate_comment_reply({"provider": "gemini", "api_key": "k", "model": "m"},
+                                    "Info Emas", "id", "Caption", "Budi", "Bisa di sungai kecil?", [])
+
+    assert out["skip"] is (not dibalas)
+
+
+# ------------------------------------------------------------ verifikasi token Facebook
+
+import core.fb_client as fbc  # noqa: E402
+
+
+class _Resp:
+    def __init__(self, data):
+        self._data = data
+
+    def json(self):
+        return self._data
+
+
+def _graph(me_id, accounts=()):
+    def get(url, params=None, timeout=None):
+        if url.endswith("/me"):
+            return _Resp({"id": me_id, "name": "Pemilik"})
+        if url.endswith("/me/accounts"):
+            return _Resp({"data": list(accounts)})
+        return _Resp({"id": "1234567890", "name": "Info Emas", "fan_count": 10, "link": "https://fb/x"})
+    return get
+
+
+def test_page_token_diterima_apa_adanya(monkeypatch):
+    monkeypatch.setattr(fbc.requests, "get", _graph(me_id="1234567890"))
+    res = fbc.test_facebook_credentials("infoemas", "page-token")
+
+    assert res["success"] and res["page_id"] == "1234567890"
+    assert res["suggested_page_token"] is None
+
+
+def test_user_token_ditukar_dengan_page_token(monkeypatch):
+    """Regresi: User Token lolos verifikasi (GET /{page} publik berhasil), lalu balasan
+    komentar tidak bisa dikirim atas nama Fanspage."""
+    monkeypatch.setattr(fbc.requests, "get", _graph(
+        me_id="999", accounts=[{"id": "1234567890", "name": "Info Emas", "access_token": "PAGE-TOKEN"}]))
+    res = fbc.test_facebook_credentials("1234567890", "user-token")
+
+    assert res["success"] and res["suggested_page_token"] == "PAGE-TOKEN"
+
+
+def test_user_token_tanpa_akses_halaman_ditolak(monkeypatch):
+    monkeypatch.setattr(fbc.requests, "get", _graph(me_id="999", accounts=[]))
+    res = fbc.test_facebook_credentials("1234567890", "user-token")
+
+    assert not res["success"] and "User Token" in res["message"]
+
+
+def test_id_numerik_disimpan_walau_username_diketik(client, monkeypatch, db):
+    """Komentar milik Fanspage dikenali lewat id numerik; username membuat Fanspage
+    membalas komentarnya sendiri."""
+    import core.pages as pages_module
+    monkeypatch.setattr(pages_module, "test_facebook_credentials", lambda pid, tok: {
+        "success": True, "page_id": "1234567890", "page_name": "Info Emas", "message": "ok"})
+
+    res = client.post("/api/pages", json={"page_id": "infoemas", "access_token": "tok"}).json()
+
+    assert res["success"]
+    assert db.query(FacebookPage).one().page_id == "1234567890"
+
+
+def test_verifikasi_tidak_mengirim_page_token_ke_browser(client, monkeypatch):
+    monkeypatch.setattr(app_module, "verify_page_credentials", lambda pid, tok: {
+        "success": True, "page_id": "1", "page_name": "X", "suggested_page_token": "RAHASIA"})
+
+    res = client.post("/api/pages/verify", json={"page_id": "1", "access_token": "u"}).json()
+
+    assert "RAHASIA" not in json.dumps(res)

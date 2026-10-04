@@ -8,6 +8,7 @@ from google.genai import types
 from sqlalchemy.orm import Session
 
 from config import (
+    GEMINI_TEXT_TIMEOUT_MS,
     DEFAULT_TEXT_MODEL,
     DEFAULT_IMAGE_MODEL,
     DEFAULT_OPENAI_TEXT_MODEL,
@@ -67,7 +68,8 @@ def complete_json(provider: str, api_key: str, model: str, system: str, user: st
     # Keep the Client referenced for the whole call: google-genai closes its HTTP
     # session in Client.__del__, so an inline genai.Client(...).models... would be
     # garbage-collected mid-call ("Cannot send a request, as the client has been closed").
-    client = genai.Client(api_key=api_key)
+    client = genai.Client(api_key=api_key,
+                          http_options=types.HttpOptions(timeout=GEMINI_TEXT_TIMEOUT_MS))
     response = client.models.generate_content(
         model=model,
         contents=user,

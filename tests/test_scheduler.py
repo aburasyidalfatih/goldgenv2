@@ -122,3 +122,95 @@ def test_job_autopost_aman_bila_halaman_sudah_dihapus(client, make_page):
     client.delete(f"/api/pages/{page['id']}")
 
     sched.auto_generate_and_post_job(page["id"])  # tidak boleh melempar error
+
+
+def _konten_palsu(monkeypatch):
+    monkeypatch.setattr(sched, "generate_post_content", lambda *a, **k: {
+        "visual_title": "Judul", "subtitle": "s",
+        "imagen_prompt": "prompt", "caption": "caption otomatis",
+    })
+    monkeypatch.setattr(sched, "generate_poster_image", lambda **k: ("auto.jpg", "auto.jpg"))
+
+
+def test_job_autopost_mencatat_postingan_sebelum_upload(client, make_page, topics, with_gemini_key,
+                                                        monkeypatch, db):
+    """Regresi: aplikasi berhenti di tengah upload autopilot dulu tidak meninggalkan
+    jejak, padahal postingan mungkin sudah tayang. Kini baris 'publishing' sudah ada
+    sehingga pemulihan saat start menandainya."""
+    _konten_palsu(monkeypatch)
+    status_saat_upload = []
+
+    def publish(page_id, access_token, image_path, caption):
+        db.expire_all()
+        status_saat_upload.extend(p.status for p in db.query(Post).all())
+        return {"success": True, "post_id": "fb_1", "post_url": "https://fb/1", "message": "ok"}
+
+    monkeypatch.setattr(sched, "publish_photo_to_page", publish)
+    page = make_page("111", autopilot_enabled=True)
+
+    sched.auto_generate_and_post_job(page["id"])
+
+    assert status_saat_upload == ["publishing"]
+    db.expire_all()
+    assert db.query(Post).one().status == "published"
+
+
+def test_job_autopost_upload_error_ditandai_gagal(client, make_page, topics, with_gemini_key,
+                                                  monkeypatch, db):
+    _konten_palsu(monkeypatch)
+
+    def publish(**k):
+        raise ConnectionError("koneksi putus")
+
+    monkeypatch.setattr(sched, "publish_photo_to_page", publish)
+    page = make_page("111", autopilot_enabled=True)
+
+    sched.auto_generate_and_post_job(page["id"])
+
+    post = db.query(Post).one()
+    assert post.status == "failed"
+    assert "koneksi putus" in post.error_message
+
+
+def _halaman_dengan_slot_lalu(make_page, db, menit_lalu):
+    """Halaman lama dengan satu jadwal posting `menit_lalu` menit yang lalu."""
+    from datetime import datetime, timedelta
+    from database.models import FacebookPage
+
+    sekarang = datetime.now(sched.SCHEDULER_TZ).replace(second=30, microsecond=0)
+    slot = sekarang - timedelta(minutes=menit_lalu)
+    page = make_page("111", autopilot_enabled=True, auto_post_times=f"{slot:%H:%M}")
+    row = db.query(FacebookPage).filter(FacebookPage.id == page["id"]).first()
+    row.created_at = datetime(2020, 1, 1)
+    db.commit()
+    return page, sekarang
+
+
+def test_slot_terlewat_saat_mati_dijalankan_setelah_restart(client, make_page, db):
+    page, sekarang = _halaman_dengan_slot_lalu(make_page, db, menit_lalu=20)
+
+    assert sched.schedule_missed_autoposts(sekarang) == [page["id"]]
+    job = sched.scheduler.get_job(f"catchup_{page['id']}")
+    assert job is not None and list(job.args) == [page["id"]]
+    # Status jadwal tetap terbaca walau ada job susulan.
+    assert client.get("/api/scheduler/status").status_code == 200
+
+
+def test_slot_sudah_berjalan_tidak_diulang(client, make_page, make_post, topics, db):
+    page, sekarang = _halaman_dengan_slot_lalu(make_page, db, menit_lalu=20)
+    make_post(page["id"], topics[0], days_ago=0)
+
+    assert sched.schedule_missed_autoposts(sekarang) == []
+
+
+def test_slot_terlalu_lama_tidak_disusul(client, make_page, db):
+    page, sekarang = _halaman_dengan_slot_lalu(make_page, db, menit_lalu=90)
+
+    assert sched.schedule_missed_autoposts(sekarang) == []
+
+
+def test_slot_tidak_disusul_bila_autopilot_mati(client, make_page, db):
+    page, sekarang = _halaman_dengan_slot_lalu(make_page, db, menit_lalu=20)
+    client.patch(f"/api/pages/{page['id']}", json={"autopilot_enabled": False})
+
+    assert sched.schedule_missed_autoposts(sekarang) == []

@@ -129,7 +129,11 @@ def generate_comment_reply(text_ai: dict, page_name: str, language: str, post_me
         raise RuntimeError("Format balasan dari model AI tidak sesuai.")
 
     reply = clean_reply(str(data.get("reply") or ""))
-    skip = bool(data.get("skip")) or not reply
+    # A model may answer "skip": "false" as a string; bool("false") is True and
+    # would silently skip every comment for good.
+    skip_raw = data.get("skip")
+    skip = (skip_raw.strip().lower() in ("true", "yes", "1") if isinstance(skip_raw, str)
+            else bool(skip_raw)) or not reply
     return {"skip": skip, "reason": str(data.get("reason") or "").strip()[:200], "reply": "" if skip else reply}
 
 

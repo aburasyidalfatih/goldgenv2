@@ -2,7 +2,7 @@ import json
 import logging
 from google import genai
 from google.genai import types
-from config import DEFAULT_TEXT_MODEL, DEFAULT_CONTENT_LANGUAGE
+from config import DEFAULT_TEXT_MODEL, DEFAULT_CONTENT_LANGUAGE, GEMINI_TEXT_TIMEOUT_MS
 from core.ai_provider import complete_json, PROVIDER_LABELS
 
 logger = logging.getLogger(__name__)
@@ -10,7 +10,8 @@ logger = logging.getLogger(__name__)
 def get_gemini_client(api_key: str):
     if not api_key:
         raise ValueError("Gemini API Key belum diisi. Silakan isi di tab Pengaturan UI.")
-    return genai.Client(api_key=api_key)
+    return genai.Client(api_key=api_key,
+                        http_options=types.HttpOptions(timeout=GEMINI_TEXT_TIMEOUT_MS))
 
 def test_gemini_key(api_key: str, model_name: str = DEFAULT_TEXT_MODEL) -> dict:
     """

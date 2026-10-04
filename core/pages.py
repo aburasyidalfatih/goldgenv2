@@ -112,6 +112,17 @@ def add_page(db: Session, page_id: str, access_token: str, verify: bool = True) 
         # A user token can carry the real page token; prefer it.
         if result.get("suggested_page_token"):
             access_token = result["suggested_page_token"]
+        # Keep Facebook's numeric id even when a username was typed: comment
+        # authors are matched against it to recognise the page's own replies.
+        canonical = str(result.get("page_id") or page_id)
+        if canonical != page_id:
+            existing = db.query(FacebookPage).filter(FacebookPage.page_id == canonical).first()
+            if existing:
+                return {
+                    "success": False,
+                    "message": f"Fanspage dengan ID {canonical} sudah terdaftar sebagai '{existing.name}'.",
+                }
+            page_id = canonical
         name = result.get("page_name") or name
         picture = result.get("picture_url")
         link = result.get("link")
@@ -192,6 +203,12 @@ def reverify_page(db: Session, page_row_id: int) -> dict:
 
     if result.get("suggested_page_token"):
         page.access_token = result["suggested_page_token"]
+    # Pages added by username before ids were normalised: switch to the numeric id.
+    canonical = str(result.get("page_id") or page.page_id)
+    if canonical != page.page_id and not (
+        db.query(FacebookPage).filter(FacebookPage.page_id == canonical, FacebookPage.id != page.id).first()
+    ):
+        page.page_id = canonical
     page.name = result.get("page_name") or page.name
     page.picture_url = result.get("picture_url") or page.picture_url
     page.link = result.get("link") or page.link
