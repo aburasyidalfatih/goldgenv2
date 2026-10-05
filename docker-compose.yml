@@ -14,6 +14,12 @@ services:
         - "${PYPI_HOST_OVERRIDE:-pypi-override-unset.invalid:127.0.0.1}"
         - "${PYPI_FILES_HOST_OVERRIDE:-pypi-files-override-unset.invalid:127.0.0.1}"
     restart: unless-stopped
+    # Docker keeps container logs forever by default; cap them at 3 x 10 MB.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     # Reached through Dokploy's Traefik (Domains tab -> port 8000), not a host port.
     # Running locally without Dokploy? Use ports: ["8000:8000"] instead.
     expose:

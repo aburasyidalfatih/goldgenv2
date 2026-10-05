@@ -116,3 +116,22 @@ def test_akun_pertama_dari_environment_hanya_bila_belum_ada_akun(client, db, mon
     app_module.bootstrap_first_user(db)
     assert auth.authenticate(db, "pemilik@contoh.com", "rahasia-awal") is not None
     db.query(User).delete(); db.commit()
+
+
+def test_pembatas_login_melupakan_percobaan_kedaluwarsa(monkeypatch):
+    """Tanpa ini, setiap IP/email yang pernah mencoba login tersimpan di memori selamanya."""
+    from core import auth as auth_module
+
+    jam = {"t": 1000.0}
+    monkeypatch.setattr(auth_module.time, "monotonic", lambda: jam["t"])
+    throttle = auth_module.LoginThrottle(window=60)
+    for i in range(500):
+        throttle.record_failure(f"10.0.0.{i % 250}", f"bot{i}@x.test")
+    assert len(throttle._failures) > 0
+
+    jam["t"] += 61
+    throttle.seconds_locked("10.0.0.1", "siapa@x.test")
+    for key in list(throttle._failures):
+        throttle._recent(key, jam["t"])
+
+    assert throttle._failures == {}

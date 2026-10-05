@@ -1,7 +1,10 @@
 import logging
+import os
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
+from apscheduler.events import EVENT_SCHEDULER_SHUTDOWN
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
@@ -646,4 +649,53 @@ def start_scheduler():
         max_instances=1,
     )
     scheduler.start()
+    _start_watchdog()
     logger.info("Background scheduler started successfully.")
+
+
+# ------------------------------------------------------------------ watchdog
+# If the scheduler thread dies, the dashboard keeps answering while autopilot,
+# comment replies, metrics and backups have silently stopped. Docker only
+# restarts a container whose process exits, so after a few failed checks the
+# watchdog exits the process and the restart policy brings everything back.
+WATCHDOG_INTERVAL_SECONDS = 60
+WATCHDOG_STRIKES = 3
+# The 10-minute comment-reply job is the heartbeat: its next run is never this
+# far in the past while the scheduler thread is alive.
+HEARTBEAT_STALE_MINUTES = 30
+_watchdog_stop = threading.Event()
+
+
+def scheduler_health(now: datetime | None = None) -> tuple[bool, str]:
+    """(healthy, reason) for /healthz and the watchdog."""
+    if not scheduler.running:
+        return False, "scheduler not running"
+    job = scheduler.get_job("comment_reply_job")
+    if job is None or job.next_run_time is None:
+        return True, "ok"
+    now = now or datetime.now(timezone.utc)
+    if now - job.next_run_time > timedelta(minutes=HEARTBEAT_STALE_MINUTES):
+        return False, f"scheduler stalled since {job.next_run_time.isoformat()}"
+    return True, "ok"
+
+
+def _watchdog_loop():
+    strikes = 0
+    while not _watchdog_stop.wait(WATCHDOG_INTERVAL_SECONDS):
+        healthy, reason = scheduler_health()
+        strikes = 0 if healthy else strikes + 1
+        if strikes:
+            logger.error(f"[Watchdog] {reason} (check {strikes}/{WATCHDOG_STRIKES}).")
+        if strikes >= WATCHDOG_STRIKES and not _watchdog_stop.is_set():
+            logger.critical("[Watchdog] Background jobs stopped; exiting so Docker restarts the app.")
+            for handler in logging.getLogger().handlers:
+                handler.flush()
+            time.sleep(1)
+            os._exit(1)
+
+
+def _start_watchdog():
+    _watchdog_stop.clear()
+    # A deliberate shutdown (app stopping, test teardown) is not a failure.
+    scheduler.add_listener(lambda event: _watchdog_stop.set(), EVENT_SCHEDULER_SHUTDOWN)
+    threading.Thread(target=_watchdog_loop, name="scheduler-watchdog", daemon=True).start()

@@ -70,6 +70,7 @@ from core.pages import (
     verify_page_credentials,
 )
 from scheduler import (
+    scheduler_health,
     start_scheduler,
     reload_autopost_schedule,
     parse_post_times,
@@ -79,6 +80,16 @@ from scheduler import (
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 for _handler in logging.getLogger().handlers:
     _handler.addFilter(RedactSecretsFilter())   # tokens never reach the container logs
+
+
+class _SkipHealthcheck(logging.Filter):
+    """Docker's health check hits /healthz every 30 s; don't log it forever."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "/healthz" not in record.getMessage()
+
+
+logging.getLogger("uvicorn.access").addFilter(_SkipHealthcheck())
 logger = logging.getLogger("AutoPosterApp")
 
 def bootstrap_first_user(db: Session):
@@ -220,7 +231,13 @@ class ChangePasswordRequest(BaseModel):
 
 @app.get("/healthz")
 def healthz():
-    """Container health check; public and reveals nothing."""
+    """
+    Container health check; public and reveals nothing. Also unhealthy (503)
+    when the background scheduler has stopped, so Dokploy shows it.
+    """
+    healthy, _ = scheduler_health()
+    if not healthy:
+        return JSONResponse({"status": "degraded"}, status_code=503)
     return {"status": "ok"}
 
 @app.get("/login", response_class=HTMLResponse)

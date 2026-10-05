@@ -149,7 +149,11 @@ class LoginThrottle:
 
     def _recent(self, key, now):
         recent = [t for t in self._failures.get(key, []) if now - t < self.window]
-        self._failures[key] = recent
+        if recent:
+            self._failures[key] = recent
+        else:
+            # Forget expired entries, or every IP/email ever tried stays in memory.
+            self._failures.pop(key, None)
         return recent
 
     def seconds_locked(self, ip: str, email: str) -> int:

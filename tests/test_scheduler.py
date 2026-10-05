@@ -170,3 +170,26 @@ def test_job_autopost_upload_error_ditandai_gagal(client, make_page, topics, wit
     post = db.query(Post).one()
     assert post.status == "failed"
     assert "koneksi putus" in post.error_message
+
+
+def test_healthz_sehat_saat_scheduler_berjalan(client):
+    assert client.get("/healthz").json() == {"status": "ok"}
+
+
+def test_scheduler_macet_terdeteksi(client, monkeypatch):
+    """Regresi: bila thread scheduler mati, dashboard tetap 'ok' sementara autopilot,
+    balas komentar, dan backup berhenti diam-diam."""
+    from datetime import datetime, timedelta, timezone
+
+    job = sched.scheduler.get_job("comment_reply_job")
+    nanti = job.next_run_time + timedelta(minutes=sched.HEARTBEAT_STALE_MINUTES + 1)
+
+    assert sched.scheduler_health(job.next_run_time.astimezone(timezone.utc))[0] is True
+    sehat, alasan = sched.scheduler_health(nanti)
+    assert sehat is False and "stalled" in alasan
+
+    monkeypatch.setattr(sched, "scheduler_health", lambda now=None: (False, "scheduler not running"))
+    import app as app_module
+    monkeypatch.setattr(app_module, "scheduler_health", sched.scheduler_health)
+    res = client.get("/healthz")
+    assert res.status_code == 503 and res.json() == {"status": "degraded"}
