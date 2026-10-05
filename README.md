@@ -234,7 +234,16 @@ Jam posting Autopilot diatur per Fanspage di tab **Fanspage** (format `HH:MM,HH:
 
 **Migrasi otomatis:** bila sebelumnya Anda sudah mengisi satu Fanspage di tab Pengaturan, konfigurasi itu dipindahkan sendiri ke tabel `facebook_pages` saat aplikasi pertama kali dijalankan, lengkap dengan seluruh riwayat postingannya — tidak ada yang perlu diisi ulang.
 
-Aset front-end berada di `static/vendor/` (Tailwind runtime 3.4.16, Alpine 3.14.9, FontAwesome 6.4.0). Tailwind di sini memakai *runtime compiler* sehingga console browser menampilkan peringatan "cdn.tailwindcss.com should not be used in production" — aman diabaikan; mengganti ke hasil build Tailwind CLI adalah opsi optimasi lanjutan.
+Aset front-end berada di `static/vendor/` (Alpine 3.14.9, FontAwesome 6.4.0) dan `static/css/tailwind.css`. File `tailwind.css` (±31 KB) adalah **hasil build Tailwind 3.4.16** dari kelas yang dipakai di `templates/` dan `static/js/app.js`. Dulu dipakai *runtime compiler* 451 KB yang menyusun CSS di browser setiap halaman dibuka. Server tidak butuh Node.js, karena file hasil build ikut di-commit.
+
+**Setelah menambah atau mengubah kelas Tailwind** di template atau `app.js`, build ulang lalu commit hasilnya:
+
+```bash
+npm install          # sekali saja
+npm run build:css
+```
+
+Bila build ulang terlupa, kelas baru akan tampil tanpa gaya. Tes `tests/test_tailwind_css.py` akan gagal dan mengingatkan; tes ini dilewati bila `npm install` belum dijalankan.
 
 ## ⚠️ Catatan Keamanan
 

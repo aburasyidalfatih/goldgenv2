@@ -227,7 +227,8 @@ def healthz():
 def login_page(request: Request, db: Session = Depends(get_db)):
     if auth.user_for_token(db, request.cookies.get(auth.SESSION_COOKIE, "")):
         return RedirectResponse("/", status_code=303)
-    return templates.TemplateResponse(request, "login.html", {"has_user": auth.has_any_user(db)})
+    return templates.TemplateResponse(request, "login.html",
+                                      {"has_user": auth.has_any_user(db), "asset_v": asset_version()})
 
 @app.post("/api/auth/login")
 def login_endpoint(req: LoginRequest, request: Request, db: Session = Depends(get_db)):
@@ -301,7 +302,8 @@ def resolve_secret(db: Session, key: str, submitted: str) -> str:
 # ==========================================
 # WEB UI ROUTES
 # ==========================================
-ASSET_FILES = [BASE_DIR / "static" / "css" / "custom.css", BASE_DIR / "static" / "js" / "app.js"]
+ASSET_FILES = [BASE_DIR / "static" / "css" / "custom.css", BASE_DIR / "static" / "css" / "tailwind.css",
+               BASE_DIR / "static" / "js" / "app.js"]
 
 def asset_version() -> str:
     """

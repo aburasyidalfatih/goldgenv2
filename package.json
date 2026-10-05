@@ -1,0 +1,11 @@
+{
+  "name": "goldgenv2-frontend",
+  "private": true,
+  "description": "Builds static/css/tailwind.css from the templates (run after changing classes).",
+  "scripts": {
+    "build:css": "tailwindcss -c tailwind.config.js -i static/css/tailwind.input.css -o static/css/tailwind.css --minify"
+  },
+  "devDependencies": {
+    "tailwindcss": "3.4.16"
+  }
+}

@@ -28,3 +28,6 @@ Thumbs.db
 # Local runtime logs & Claude Code workspace settings
 *.log
 .claude/
+
+# Frontend build tooling (static/css/tailwind.css is committed)
+node_modules/

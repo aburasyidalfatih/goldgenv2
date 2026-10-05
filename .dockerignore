@@ -18,3 +18,4 @@ storage/generated_images/*
 .pytest_cache/
 tests/
 .env.example
+node_modules/
