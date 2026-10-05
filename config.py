@@ -27,7 +27,16 @@ DEFAULT_CONTENT_LANGUAGE = "en"
 # Default Model & Application Settings (Gemini 3 Family)
 DEFAULT_TEXT_MODEL = "gemini-3.8-flash"
 DEFAULT_IMAGE_MODEL = "gemini-3.1-flash-image"
-DEFAULT_IMAGE_FALLBACK_MODEL = "imagen-3.0-generate-002"
+# Tried when the chosen Gemini image model fails. Imagen 3 (the old fallback) was
+# shut down by Google on 2025-11-10, so the fallback stays in the Gemini family.
+DEFAULT_IMAGE_FALLBACK_MODEL = "gemini-3.1-flash-lite-image"
+
+# Gemini models Google has shut down: a saved setting is swapped at startup.
+GEMINI_RETIRED_MODELS = {
+    "imagen-3.0-generate-002": DEFAULT_IMAGE_MODEL,
+    "imagen-3.0-generate-001": DEFAULT_IMAGE_MODEL,
+    "imagen-3.0-fast-generate-001": DEFAULT_IMAGE_MODEL,
+}
 
 # Gemini request timeouts (milliseconds). Without one a stalled call blocks its
 # scheduler job forever, and max_instances=1 then skips every later run.

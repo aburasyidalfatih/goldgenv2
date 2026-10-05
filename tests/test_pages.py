@@ -122,3 +122,22 @@ def test_halaman_tidak_ada_memberi_pesan_jelas(client):
     assert client.delete("/api/pages/9999").json()["success"] is False
     assert client.patch("/api/pages/9999", json={"name": "x"}).json()["success"] is False
     assert client.post("/api/pages/9999/verify").json()["success"] is False
+
+
+def test_jam_posting_sebagian_tidak_valid_ditolak(client, make_page):
+    """Regresi: "10:00,25:99" dulu tersimpan utuh, padahal hanya 10:00 yang dijadwalkan."""
+    page = make_page("111")
+
+    res = client.patch(f"/api/pages/{page['id']}", json={"auto_post_times": "10:00,25:99"}).json()
+
+    assert res["success"] is False and "25:99" in res["message"]
+    assert client.get("/api/pages").json()["pages"][0]["auto_post_times"] == "10:00,19:00"
+
+
+def test_jam_posting_dirapikan_saat_disimpan(client, make_page):
+    page = make_page("111")
+
+    res = client.patch(f"/api/pages/{page['id']}", json={"auto_post_times": " 19:00, 7:5 ,19:00"}).json()
+
+    assert res["success"] is True
+    assert res["page"]["auto_post_times"] == "07:05,19:00"

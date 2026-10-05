@@ -200,3 +200,23 @@ def test_pohon_kurikulum_menampilkan_induk_dan_turunan(client, make_page, make_p
     assert pohon["unlinked_variants"] == []
     cabang = [b for b in pohon["curriculum"] if b["id"] == induk.id][0]
     assert len(cabang["variants"]) == 1
+
+
+def test_tanpa_reach_pemenang_dipilih_dari_engagement(client, make_page, make_post, topics, db):
+    """Regresi: token tanpa izin read_insights membuat reach selalu 0, sehingga
+    evolusi topik tidak pernah berjalan walau ada reaksi, komentar, dan share."""
+    from database.models import PostMetric
+    page = make_page("111")
+    for topic, likes in ((topics[2], 40), (topics[5], 5)):
+        post = make_post(page["id"], topic, days_ago=3, reach=600)
+        metric = db.query(PostMetric).filter(PostMetric.post_id == post.id).one()
+        metric.reach, metric.impressions, metric.reactions = 0, 0, likes
+        metric.calculated_score = likes * 1.5
+    db.commit()
+    capture = {}
+
+    res = evolve_topics(db, api_key="k", page_id=page["id"],
+                        generator=_stub_generator([_variant()], capture))
+
+    assert res["success"] is True
+    assert capture["winners"][0]["topic_title"] == topics[2].title

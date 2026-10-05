@@ -9,7 +9,7 @@
 - Analitik menampilkan “Belum cukup data” sebelum tersedia metrik, serta waktu pembaruan terakhir. Pemenang dihitung dari skor performa terkumpul.
 - Jalankan pengujian alur UI tanpa layanan eksternal dengan `node --test tests/ui_state.test.cjs`; pengujian API menggunakan `python -m pytest -p no:cacheprovider` dengan database sementara.
 
-Aplikasi cerdas untuk memproduksi konten edukasi visual (poster infografis geologi & pencarian emas ala *vintage field guide*) menggunakan **Google Gemini API (Gemini 2.5 Flash & Imagen 3)**, mempublikasikannya ke Facebook Fanspage via **Facebook Graph API**, serta mengoptimalkan topik postingan secara mandiri menggunakan **Feedback Learning Loop** berdasarkan data jangkauan (*Reach & Engagement*).
+Aplikasi cerdas untuk memproduksi konten edukasi visual (poster infografis geologi & pencarian emas ala *vintage field guide*) menggunakan **Google Gemini API (Gemini Flash & Gemini Flash Image)** atau **OpenAI**, mempublikasikannya ke Facebook Fanspage via **Facebook Graph API**, serta mengoptimalkan topik postingan secara mandiri menggunakan **Feedback Learning Loop** berdasarkan data jangkauan (*Reach & Engagement*).
 
 ---
 

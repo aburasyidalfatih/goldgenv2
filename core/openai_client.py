@@ -53,12 +53,20 @@ def orientation(aspect_ratio: str) -> str:
     return "square"
 
 
+# model -> optional parameters it has rejected. Remembered so every later call
+# skips them up front instead of paying a failed request first each time.
+_REJECTED_PARAMS: dict = {}
+
+
 def _post_dropping_unsupported(url: str, api_key: str, body: dict, optional: tuple, timeout: int):
     """
     POSTs `body`; when the model rejects one of the `optional` parameters (e.g. a
     reasoning model refusing `temperature`, or a non-reasoning model refusing
     `reasoning_effort`), drops that parameter and tries again.
     """
+    known = _REJECTED_PARAMS.setdefault(body.get("model"), set())
+    for key in known:
+        body.pop(key, None)
     while True:
         response = requests.post(url, headers=_headers(api_key), json=body, timeout=timeout)
         if response.status_code != 400:
@@ -68,6 +76,7 @@ def _post_dropping_unsupported(url: str, api_key: str, body: dict, optional: tup
         if rejected is None:
             return response
         logger.info(f"OpenAI model rejected '{rejected}'; retrying without it.")
+        known.add(rejected)
         body.pop(rejected)
 
 

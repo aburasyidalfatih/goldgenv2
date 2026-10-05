@@ -78,8 +78,8 @@ def generate_poster_image(
 ) -> tuple[str, str]:
     """
     Generates an educational infographic poster. With provider 'gemini' it uses
-    Gemini image models or Imagen, falling back to the other family if the primary
-    model fails; with 'openai' it uses the configured OpenAI image model.
+    the chosen Gemini image model, falling back to another Gemini image model if it
+    fails; with 'openai' it uses the configured OpenAI image model.
 
     `theme` is the Fanspage's color theme; `watermark` (the Fanspage name) is
     stamped in the bottom-right corner of the finished poster.
@@ -109,12 +109,10 @@ def generate_poster_image(
                           http_options=types.HttpOptions(timeout=GEMINI_IMAGE_TIMEOUT_MS))
 
     is_gemini_primary = "gemini" in model_name.lower()
-    if is_gemini_primary:
-        primary = (_generate_via_gemini, model_name)
-        fallback = (_generate_via_imagen, DEFAULT_IMAGE_FALLBACK_MODEL)
-    else:
-        primary = (_generate_via_imagen, model_name)
-        fallback = (_generate_via_gemini, DEFAULT_IMAGE_MODEL)
+    primary = (_generate_via_gemini if is_gemini_primary else _generate_via_imagen, model_name)
+    # The fallback is always a Gemini image model: every Imagen model is deprecated.
+    fallback_model = DEFAULT_IMAGE_FALLBACK_MODEL if model_name != DEFAULT_IMAGE_FALLBACK_MODEL else DEFAULT_IMAGE_MODEL
+    fallback = (_generate_via_gemini, fallback_model)
 
     errors = []
     for route, route_model in (primary, fallback):

@@ -134,6 +134,14 @@ def test_openai_dipilih_tanpa_kunci_ditolak_dengan_jelas(client, make_page, fake
 # ------------------------------------------------------------ klien REST
 
 
+@pytest.fixture(autouse=True)
+def _lupakan_parameter_ditolak():
+    """Each test starts with no remembered rejections."""
+    openai_client._REJECTED_PARAMS.clear()
+    yield
+    openai_client._REJECTED_PARAMS.clear()
+
+
 def test_naskah_json_dan_coba_ulang_tanpa_temperature(monkeypatch):
     bodies = []
 
@@ -150,6 +158,10 @@ def test_naskah_json_dan_coba_ulang_tanpa_temperature(monkeypatch):
     assert raw == '{"caption": "ok"}'
     assert len(bodies) == 2 and "temperature" not in bodies[1]
     assert bodies[0]["response_format"] == {"type": "json_object"}
+
+    # The rejection is remembered: the next call goes through in one request.
+    openai_client.complete_json("sk-x", "gpt-5-mini", "Balas JSON", "topik", 0.7)
+    assert len(bodies) == 3 and "temperature" not in bodies[2]
 
 
 def test_error_openai_tidak_membocorkan_kunci(monkeypatch):
@@ -209,7 +221,7 @@ def test_model_openai_yang_dihentikan_diganti_saat_start(client, db):
     rows["openai_text_model"].value, rows["openai_image_model"].value = "gpt-5-mini", "gpt-image-1"
     db.commit()
 
-    changed = app_module.replace_retired_openai_models(db)
+    changed = app_module.replace_retired_models(db)
 
     assert changed == {"openai_text_model": ("gpt-5-mini", DEFAULT_OPENAI_TEXT_MODEL),
                        "openai_image_model": ("gpt-image-1", DEFAULT_OPENAI_IMAGE_MODEL)}
@@ -225,7 +237,7 @@ def test_model_pilihan_sendiri_yang_masih_aktif_tidak_disentuh(client, db):
     row.value = "gpt-6-luna"
     db.commit()
 
-    assert app_module.replace_retired_openai_models(db) == {}
+    assert app_module.replace_retired_models(db) == {}
     db.refresh(row)
     assert row.value == "gpt-6-luna"
     assert DEFAULT_OPENAI_TEXT_MODEL not in OPENAI_RETIRED_MODELS

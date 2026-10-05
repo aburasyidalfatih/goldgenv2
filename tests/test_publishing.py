@@ -350,3 +350,15 @@ def test_fanspage_baru_default_caption_bahasa_inggris(client, make_page, fake_ge
 
     assert fake_gemini["calls"][-1]["language"] == "en"
     assert post["caption"].startswith("caption #1 en")
+
+
+def test_generate_untuk_fanspage_terhapus_ditolak(client, make_page, fake_gemini, with_gemini_key, db):
+    """Dulu tetap memakai kuota AI dan menyimpan draft yatim tanpa Fanspage."""
+    from database.models import Post
+    page = make_page("111")
+    client.delete(f"/api/pages/{page['id']}")
+
+    res = client.post("/api/generate", json={"topic_id": "auto", "page_id": page["id"]}).json()
+
+    assert res["success"] is False and "tidak ditemukan" in res["message"]
+    assert fake_gemini["calls"] == [] and db.query(Post).count() == 0

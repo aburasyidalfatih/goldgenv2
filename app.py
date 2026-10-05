@@ -23,6 +23,7 @@ from config import (
     DEFAULT_OPENAI_TEXT_MODEL,
     DEFAULT_OPENAI_IMAGE_MODEL,
     OPENAI_RETIRED_MODELS,
+    GEMINI_RETIRED_MODELS,
     SENSITIVE_SETTING_KEYS,
     SECRET_MASK,
     DEFAULT_CONTENT_LANGUAGE,
@@ -100,21 +101,24 @@ def bootstrap_first_user(db: Session):
     except ValueError as e:
         logger.error(f"AUTOPOSTER_ADMIN_* tidak valid: {e}")
 
-def replace_retired_openai_models(db: Session) -> dict:
+def replace_retired_models(db: Session) -> dict:
     """
-    A saved OpenAI model that OpenAI has shut down (or is about to) would make
-    every generation fail; swap it for its listed replacement. Returns the changes.
+    A saved OpenAI or Gemini model that has been shut down (or is about to be)
+    would make every generation fail; swap it for its listed replacement.
+    Returns the changes.
     """
     changed = {}
-    for key in ("openai_text_model", "openai_image_model"):
+    for key, retired in (("openai_text_model", OPENAI_RETIRED_MODELS),
+                         ("openai_image_model", OPENAI_RETIRED_MODELS),
+                         ("gemini_image_model", GEMINI_RETIRED_MODELS)):
         row = db.query(AppSetting).filter(AppSetting.key == key).first()
-        if row and row.value in OPENAI_RETIRED_MODELS:
-            changed[key] = (row.value, OPENAI_RETIRED_MODELS[row.value])
-            row.value = OPENAI_RETIRED_MODELS[row.value]
+        if row and row.value in retired:
+            changed[key] = (row.value, retired[row.value])
+            row.value = retired[row.value]
     if changed:
         db.commit()
         for key, (old, new) in changed.items():
-            logger.info(f"OpenAI model '{old}' is retired; {key} switched to '{new}'.")
+            logger.info(f"Model '{old}' is retired; {key} switched to '{new}'.")
     return changed
 
 @asynccontextmanager
@@ -139,7 +143,7 @@ async def lifespan(app: FastAPI):
         added = seed_base_curriculum(db)
         if added:
             logger.info(f"Added {len(added)} base topic(s) to the curriculum.")
-        replace_retired_openai_models(db)
+        replace_retired_models(db)
         # A post left in "publishing" means the app stopped mid-upload. Whether
         # Facebook received it is unknown, so flag it instead of retrying blindly.
         stuck = db.query(Post).filter(Post.status == "publishing").all()
@@ -459,11 +463,19 @@ def verify_page_endpoint(req: VerifyPageRequest):
 @app.patch("/api/pages/{page_row_id}")
 def update_page_endpoint(page_row_id: int, payload: Dict[str, Any], db: Session = Depends(get_db)):
     if "auto_post_times" in payload:
-        if not parse_post_times(str(payload["auto_post_times"])):
+        raw = str(payload["auto_post_times"])
+        entries = [c.strip() for c in raw.split(",") if c.strip()]
+        invalid = [c for c in entries if not parse_post_times(c)]
+        if not entries or invalid:
+            # Saving "10:00,25:99" used to show both times while only 10:00 ran.
+            detail = f" ({', '.join(invalid)})" if invalid else ""
             return {
                 "success": False,
-                "message": "Format jam posting tidak valid. Gunakan format 24 jam, contoh: 10:00,19:00"
+                "message": f"Format jam posting tidak valid{detail}. Gunakan format 24 jam, contoh: 10:00,19:00"
             }
+        # Store exactly what will be scheduled: zero-padded, sorted, no duplicates.
+        payload["auto_post_times"] = ",".join(
+            f"{h:02d}:{m:02d}" for h, m in sorted(set(parse_post_times(raw))))
     result = update_page(db, page_row_id, payload)
     if result.get("success"):
         _refresh_schedule()
@@ -741,6 +753,9 @@ def generate_content_endpoint(req: GenerateRequest, db: Session = Depends(get_db
 
     # Content is produced per page: language and ratio follow the page's own settings.
     page = get_page(db, req.page_id) if req.page_id else default_page(db)
+    if req.page_id and not page:
+        # Deleted in another tab: don't spend AI credits on a draft that has no page.
+        return {"success": False, "message": "Fanspage tujuan tidak ditemukan. Muat ulang halaman lalu pilih Fanspage."}
     language = req.language or (page.content_language if page else None) or DEFAULT_CONTENT_LANGUAGE
     aspect_ratio = req.aspect_ratio or (page.aspect_ratio if page else None) or "3:4"
 

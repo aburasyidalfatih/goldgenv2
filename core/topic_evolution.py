@@ -293,11 +293,20 @@ def evolve_topics(
         # count, ranked by average reach per post (not the total, which would simply
         # favour whatever was posted most often).
         performance = window_performance(db, window_days, page_id, mature_only=True)
+        measured = [e for e in performance["ranking"] if e["measured_posts"] > 0]
         winners = sorted(
-            (e for e in performance["ranking"]
-             if e["measured_posts"] > 0 and e["reach"] >= MIN_WINNER_REACH),
+            (e for e in measured if e["reach"] >= MIN_WINNER_REACH),
             key=lambda e: (e["avg_reach"], e["reach"]), reverse=True,
         )[:3]
+        if not winners:
+            # Reach stays 0 when the token lacks read_insights; evolution then never
+            # ran at all. Reactions, comments and shares still show who won.
+            winners = sorted(
+                (e for e in measured if e.get("score", 0) > 0),
+                key=lambda e: (e["avg_score"], e["score"]), reverse=True,
+            )[:3]
+            if winners:
+                logger.info("[Evolution] No reach measured; winners ranked by engagement score.")
 
     if not winners:
         return {
