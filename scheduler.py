@@ -10,6 +10,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from config import (
+    normalize_aspect_ratio,
     SCHEDULER_TIMEZONE,
     DEFAULT_SETTINGS,
     DEFAULT_CONTENT_LANGUAGE,
@@ -129,7 +130,7 @@ def auto_generate_and_post_job(page_row_id: int):
                 return
 
         lang = page.content_language or DEFAULT_CONTENT_LANGUAGE
-        aspect_ratio = page.aspect_ratio or "3:4"
+        aspect_ratio = normalize_aspect_ratio(page.aspect_ratio)
 
         logger.info(f"[Scheduler] Autonomous content cycle for '{page.name}'...")
 

@@ -26,6 +26,7 @@ Aplikasi cerdas untuk memproduksi konten edukasi visual (poster infografis geolo
    * **Pilihan mesin AI**: penyedia naskah dan penyedia gambar dipilih terpisah (Gemini atau OpenAI) — misalnya naskah dari Gemini, poster dari `gpt-image-2.5-flare`. Model OpenAI dipilih dari dropdown berisi model yang masih berlaku (GPT-6.1 Sol, GPT-6 Luna, GPT-6 Astra, GPT-5.6 Terra; GPT Image 2.5 Flare/Sunburst, GPT Image 2) atau diketik manual; model yang sudah dihentikan OpenAI (mis. `gpt-5-mini`, `gpt-image-1`, `dall-e-3`) otomatis diganti saat aplikasi menyala. Berlaku untuk generate manual, render ulang, autopilot, dan evolusi topik. Hanya kunci penyedia yang dipilih yang wajib diisi.
    * **Kendali biaya** (tab Pengaturan): *Tingkat Penalaran Teks* (default Rendah — token "berpikir" ditagih sebagai output, dan caption tidak butuh penalaran berat), *Kualitas Gambar OpenAI* (default Sedang ±$0,04/gambar; *Otomatis* bisa memilih kualitas mahal), dan model gambar Gemini hemat `gemini-3.1-flash-lite-image` (±$0,034 vs ±$0,067/gambar). Rasio poster Fanspage kini juga dikirim ke model gambar Gemini.
    * **Identitas visual per Fanspage**: tiap Fanspage memilih *Tema Warna Poster* di tab Fanspage — 9 pilihan: Vintage Parchment, Midnight Gold, Forest & Copper, Desert Sunset, Glacier Blue, Blueprint, Volcanic, Crimson Ore, atau Sage & Clay — dan paletnya dipaksakan ke prompt gambar. Setiap poster diberi **watermark nama Fanspage** di pojok kanan bawah; watermark digambar oleh aplikasi (bukan diminta ke AI), jadi ejaan dan posisinya selalu tepat tanpa biaya tambahan.
+   * **Rasio poster standar 4:5** (1080×1350). Rasio ini adalah rasio potret tertinggi yang diterima Instagram, dan tampil penuh di feed Facebook, sehingga satu poster bisa dipakai untuk keduanya. Pilihan lainnya hanya 1:1. Fanspage yang masih tersimpan dengan rasio lama (3:4) otomatis dipindah ke 4:5 saat aplikasi start.
    * OpenAI hanya menyediakan kanvas potret 2:3, persegi, dan lanskap; poster dibuat di kanvas yang paling dekat dengan rasio Fanspage.
    * Uji coba validitas API Key dan token dalam 1 klik.
    * Responsif penuh: navigasi tab tetap terjangkau di HP, tablet, dan desktop.
@@ -71,6 +72,21 @@ Tab **Komentar** membalas komentar pengikut di **semua postingan** Fanspage, bai
 * Memakai penyedia teks yang dipilih di Pengaturan (Gemini atau OpenAI).
 * Saat Fanspage ditambahkan atau diverifikasi ulang, **User Token otomatis ditukar dengan Page Token**. User Token tidak bisa membalas atas nama Fanspage. Page ID juga disimpan dalam bentuk angka walau yang diketik username, agar komentar Fanspage sendiri dikenali.
 * **Izin token yang dibutuhkan**: `pages_read_engagement`, `pages_read_user_content`, `pages_manage_engagement`. Bila kurang, pesan kesalahannya tampil di panel Balasan Otomatis.
+
+## 📸 Posting ke Instagram
+
+Di tab **Fanspage**, nyalakan **Juga posting ke Instagram** pada halaman yang punya akun Instagram, lalu klik **Simpan Preferensi**.
+
+* **Satu kali generate untuk dua platform**: poster dan caption yang sama persis dengan Facebook dikirim ke Instagram, tanpa generate ulang dan tanpa biaya AI tambahan.
+* Pengiriman ke Instagram berlangsung beberapa menit setelah postingan tayang di Facebook (dicek tiap 5 menit, jadi tetap jalan setelah restart). Hanya postingan yang tayang **setelah** fitur dinyalakan yang dikirim.
+* **Syarat**:
+  * akun Instagram **Profesional** (Bisnis atau Kreator) yang **terhubung** ke Fanspage;
+  * Page Access Token berizin `instagram_basic` dan `instagram_content_publish`;
+  * aplikasi bisa diakses lewat **domain HTTPS**, karena Instagram mengunduh poster dari alamat publik aplikasi. Buka dashboard sekali lewat domain itu, atau isi `PUBLIC_BASE_URL`.
+* Poster tetap terkunci login. Instagram mendapat link acak khusus satu poster yang kedaluwarsa sendiri.
+* Poster 4:5 dan 1:1 dikirim apa adanya. Poster lama 3:4 atau kanvas 2:3 dari OpenAI diberi bingkai menjadi 4:5, tidak pernah dipotong.
+* Bila gagal, dicoba lagi sampai 3 kali dan dikirim email peringatan. Bila koneksi terputus saat menayangkan, tidak dicoba ulang supaya tidak tayang dua kali.
+* Link Instagram tampil di Studio, beranda, dan Riwayat.
 
 ## 🔗 Komentar Promosi Pertama
 
@@ -236,6 +252,7 @@ Catatan:
 | `AUTOPOSTER_DATA_DIR` | `./data` | Lokasi database SQLite. Dipakai suite tes agar tidak menyentuh data asli. |
 | `AUTOPOSTER_STORAGE_DIR` | `./storage` | Lokasi poster hasil generate. |
 | `AUTOPOSTER_BACKUP_DIR` | `./backups` | Lokasi backup database harian. |
+| `PUBLIC_BASE_URL` | — | Alamat HTTPS publik aplikasi (mis. `https://autoposter.domainanda.com`), tempat Instagram mengunduh poster. Bila kosong, dipakai alamat terakhir tempat dashboard dibuka lewat HTTPS. |
 
 Pengaturan evolusi topik (`auto_topic_evolution`, `topic_window_days`, `max_new_topics_per_cycle`) diatur dari tab **Pengaturan**, bukan environment variable.
 

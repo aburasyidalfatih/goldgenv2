@@ -40,7 +40,7 @@ def _raise_for_error(response) -> None:
 
 
 def orientation(aspect_ratio: str) -> str:
-    """'3:4' -> 'portrait'. OpenAI only offers three canvas shapes."""
+    """'4:5' -> 'portrait'. OpenAI only offers three canvas shapes."""
     try:
         w, h = (float(x) for x in aspect_ratio.split(":"))
         ratio = w / h

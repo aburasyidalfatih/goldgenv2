@@ -7,8 +7,9 @@ that page.
   loses one; only posts published after Instagram was switched on are sent.
 - Instagram downloads the image from a public HTTPS URL. The poster folder needs
   a login, so each post gets a random, short-lived link serving only its poster.
-- Instagram accepts aspect ratios from 4:5 to 1.91:1; the 3:4 posters are padded
-  (never cropped, so no text is cut) to 4:5.
+- Posters are 4:5 or 1:1 by default, which Instagram accepts as they are. Anything
+  outside 4:5..1.91:1 (older 3:4 posters, OpenAI's 2:3 canvas) is padded, never
+  cropped, so no text is cut.
 """
 import io
 import logging

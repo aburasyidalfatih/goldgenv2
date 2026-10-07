@@ -9,7 +9,7 @@ import logging
 from datetime import datetime, timezone
 from sqlalchemy import text, inspect
 
-from config import DEFAULT_CONTENT_LANGUAGE
+from config import DEFAULT_CONTENT_LANGUAGE, DEFAULT_ASPECT_RATIO, POSTER_RATIOS, normalize_aspect_ratio
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +92,7 @@ def migrate_single_page_to_multi(engine) -> str | None:
                 "token": token,
                 "picture": settings.get("fb_page_picture") or None,
                 "lang": settings.get("content_language") or DEFAULT_CONTENT_LANGUAGE,
-                "ratio": settings.get("aspect_ratio") or "3:4",
+                "ratio": normalize_aspect_ratio(settings.get("aspect_ratio")),
                 "times": settings.get("auto_post_times") or "10:00,19:00",
                 "autopilot": 1 if (settings.get("auto_scheduler_enabled") or "").lower() == "true" else 0,
                 "status": settings.get("fb_token_status") or "Dipindahkan dari pengaturan lama",
@@ -156,5 +156,16 @@ def run_migrations(engine) -> list:
                 "UPDATE content_topics SET base_topic_id = parent_topic_id "
                 "WHERE source = 'ai' AND base_topic_id IS NULL AND parent_topic_id IS NOT NULL"
             ))
+
+        # Poster ratio standard: 4:5 (Facebook + Instagram) or 1:1. Pages still on
+        # a retired ratio (3:4 before October 2026) move to 4:5 for their next posts.
+        if "facebook_pages" in existing_tables:
+            allowed = ", ".join(f"'{r}'" for r in POSTER_RATIOS)
+            moved = conn.execute(text(
+                f"UPDATE facebook_pages SET aspect_ratio = :std "
+                f"WHERE aspect_ratio IS NULL OR aspect_ratio NOT IN ({allowed})"
+            ), {"std": DEFAULT_ASPECT_RATIO}).rowcount
+            if moved:
+                logger.info(f"[Migration] {moved} Fanspage(s) switched to the {DEFAULT_ASPECT_RATIO} poster ratio.")
 
     return applied

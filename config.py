@@ -38,6 +38,17 @@ GEMINI_RETIRED_MODELS = {
     "imagen-3.0-fast-generate-001": DEFAULT_IMAGE_MODEL,
 }
 
+# Poster shapes the app offers. 4:5 is the standard: the tallest ratio Instagram
+# accepts and shown in full in the Facebook feed, so one poster serves both.
+POSTER_RATIOS = ("4:5", "1:1")
+DEFAULT_ASPECT_RATIO = "4:5"
+
+
+def normalize_aspect_ratio(value) -> str:
+    """Any other or legacy ratio (e.g. the former 3:4) becomes the standard 4:5."""
+    return value if value in POSTER_RATIOS else DEFAULT_ASPECT_RATIO
+
+
 # Gemini request timeouts (milliseconds). Without one a stalled call blocks its
 # scheduler job forever, and max_instances=1 then skips every later run.
 GEMINI_TEXT_TIMEOUT_MS = 120_000
@@ -87,7 +98,7 @@ DEFAULT_SETTINGS = {
     "fb_page_picture": "",
     "fb_token_status": "Not Configured",
     "content_language": DEFAULT_CONTENT_LANGUAGE,
-    "aspect_ratio": "3:4",     # 3:4 portrait optimal for Facebook
+    "aspect_ratio": "4:5",     # see POSTER_RATIOS
     "auto_scheduler_enabled": "false",
     "auto_post_times": "10:00,19:00",
     # Topic evolution: grow new topics from the best performers of the last N days

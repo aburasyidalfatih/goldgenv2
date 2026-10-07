@@ -338,3 +338,17 @@ def test_rasio_poster_dikirim_ke_model_gambar_gemini(tmp_dir):
     imagen_client._generate_via_gemini(client, "gemini-3.1-flash-image", "poster", "3:4", tmp_dir / "x.jpg")
 
     assert dipakai["rasio"] == "3:4"
+
+
+def test_imagen_mendapat_kanvas_terdekat_untuk_4_5(tmp_dir):
+    """Imagen tidak punya kanvas 4:5; dipakai 3:4 (diberi bingkai saat ke Instagram)."""
+    from core import imagen_client
+    dipakai = {}
+
+    class Models:
+        def generate_images(self, model, prompt, config):
+            dipakai.update(config)
+            return type("R", (), {"generated_images": []})()
+
+    imagen_client._generate_via_imagen(type("C", (), {"models": Models()})(), "imagen-4", "p", "4:5", tmp_dir / "x.jpg")
+    assert dipakai["aspect_ratio"] == "3:4"

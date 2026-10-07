@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from config import SECRET_MASK, DEFAULT_CONTENT_LANGUAGE
+from config import SECRET_MASK, DEFAULT_CONTENT_LANGUAGE, POSTER_RATIOS, normalize_aspect_ratio
 from core.utils import iso_utc
 from core.poster_style import THEMES, normalize_theme
 from database.models import ContentTopic, FacebookPage, Post, PageTopicWeight, CommentReply
@@ -45,7 +45,7 @@ def serialize_page(page: FacebookPage, db: Session | None = None) -> dict:
         "has_token": bool(page.access_token),
         "access_token": SECRET_MASK if page.access_token else "",
         "content_language": page.content_language or DEFAULT_CONTENT_LANGUAGE,
-        "aspect_ratio": page.aspect_ratio or "3:4",
+        "aspect_ratio": normalize_aspect_ratio(page.aspect_ratio),
         "color_theme": normalize_theme(page.color_theme),
         "auto_post_times": page.auto_post_times or "10:00,19:00",
         "autopilot_enabled": bool(page.autopilot_enabled),
@@ -177,6 +177,8 @@ def update_page(db: Session, page_row_id: int, payload: dict) -> dict:
         "autopilot_enabled": bool,
         "is_active": bool,
     }
+    if payload.get("aspect_ratio") is not None and payload["aspect_ratio"] not in POSTER_RATIOS:
+        return {"success": False, "message": "Rasio poster harus 4:5 atau 1:1."}
     for key, caster in editable.items():
         if key in payload and payload[key] is not None:
             setattr(page, key, caster(payload[key]) if caster is not bool else bool(payload[key]))

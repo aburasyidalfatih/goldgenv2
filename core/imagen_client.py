@@ -55,7 +55,8 @@ def _generate_via_imagen(client, model_name: str, prompt: str, aspect_ratio: str
         prompt=prompt,
         config=dict(
             number_of_images=1,
-            aspect_ratio=aspect_ratio,
+            # Imagen has no 4:5 canvas; 3:4 is the closest (padded for Instagram).
+            aspect_ratio="3:4" if aspect_ratio == "4:5" else aspect_ratio,
             output_mime_type="image/jpeg",
         )
     )
@@ -69,7 +70,7 @@ def _generate_via_imagen(client, model_name: str, prompt: str, aspect_ratio: str
 def generate_poster_image(
     api_key: str,
     prompt: str,
-    aspect_ratio: str = "3:4",
+    aspect_ratio: str = "4:5",
     model_name: str = DEFAULT_IMAGE_MODEL,
     provider: str = "gemini",
     quality: str | None = None,

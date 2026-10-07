@@ -47,12 +47,12 @@ def test_field_wajib_divalidasi(client):
 
 
 def test_setiap_halaman_punya_preferensi_sendiri(client, make_page):
-    make_page("111", content_language="id", aspect_ratio="3:4", auto_post_times="07:00,17:00")
+    make_page("111", content_language="id", aspect_ratio="1:1", auto_post_times="07:00,17:00")
     make_page("222", content_language="en", aspect_ratio="1:1", auto_post_times="12:30")
 
     a, b = client.get("/api/pages").json()["pages"]
 
-    assert (a["content_language"], a["aspect_ratio"], a["auto_post_times"]) == ("id", "3:4", "07:00,17:00")
+    assert (a["content_language"], a["aspect_ratio"], a["auto_post_times"]) == ("id", "1:1", "07:00,17:00")
     assert (b["content_language"], b["aspect_ratio"], b["auto_post_times"]) == ("en", "1:1", "12:30")
 
 
@@ -141,3 +141,32 @@ def test_jam_posting_dirapikan_saat_disimpan(client, make_page):
 
     assert res["success"] is True
     assert res["page"]["auto_post_times"] == "07:05,19:00"
+
+
+def test_rasio_standar_4_5_dan_hanya_dua_pilihan(client, make_page):
+    page = make_page("111")
+    assert page["aspect_ratio"] == "4:5"                          # standar Fanspage baru
+
+    res = client.patch(f"/api/pages/{page['id']}", json={"aspect_ratio": "3:4"}).json()
+    assert res["success"] is False and "4:5 atau 1:1" in res["message"]
+
+    res = client.patch(f"/api/pages/{page['id']}", json={"aspect_ratio": "1:1"}).json()
+    assert res["success"] is True and res["page"]["aspect_ratio"] == "1:1"
+
+
+def test_fanspage_lama_3_4_pindah_ke_4_5_saat_start(client, make_page, db):
+    """Fanspage yang tersimpan dengan rasio lama (3:4) memakai 4:5 untuk postingan berikutnya."""
+    from database.db_session import engine
+    from database.migrations import run_migrations
+    from database.models import FacebookPage
+
+    lama = make_page("111")
+    persegi = make_page("222", aspect_ratio="1:1")
+    db.query(FacebookPage).filter(FacebookPage.id == lama["id"]).update({FacebookPage.aspect_ratio: "3:4"})
+    db.commit()
+
+    run_migrations(engine)
+
+    db.expire_all()
+    rasio = {p.id: p.aspect_ratio for p in db.query(FacebookPage)}
+    assert rasio[lama["id"]] == "4:5" and rasio[persegi["id"]] == "1:1"

@@ -72,6 +72,11 @@ def test_poster_3_4_diberi_bingkai_jadi_4_5_tanpa_dipotong():
     assert besar.size == (1080, 1350)                    # poster besar diperkecil ke lebar 1080
 
 
+def test_poster_4_5_standar_tidak_diberi_bingkai():
+    out = Image.open(io.BytesIO(ig.instagram_image_bytes(str(_poster(1080, 1350)))))
+    assert out.size == (1080, 1350)
+
+
 def test_poster_persegi_tidak_diubah_rasionya():
     out = Image.open(io.BytesIO(ig.instagram_image_bytes(str(_poster(1024, 1024)))))
     assert out.size == (1024, 1024)

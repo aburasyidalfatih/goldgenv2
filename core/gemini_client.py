@@ -72,7 +72,7 @@ def template_content(topic_dict: dict, language: str = DEFAULT_CONTENT_LANGUAGE)
             f"Vintage field guide educational infographic poster titled '{title}'. "
             "Detailed geological cross section diagram of river, water dynamics arrows, "
             "bedrock gravel layers with gold nuggets, bottom panel with macro photos of "
-            "black sand and quartz, aged paper texture, 3:4 aspect ratio."
+            "black sand and quartz, aged paper texture."
         ),
         "caption": _template_caption(title, topic_dict.get("core_concept", ""), language),
     }
@@ -102,7 +102,7 @@ def generate_post_content(api_key: str, topic_dict: dict, language: str = DEFAUL
     system_instruction = f"""
 You are a World-Class Geological Field Illustrator and Senior Gold Prospecting Educator.
 Your task is to create two things for a given gold prospecting topic:
-1. An extremely detailed, structured Image Generation Prompt for Imagen 3 to create a vintage national-park-style educational infographic poster (aspect ratio 3:4 portrait).
+1. An extremely detailed, structured Image Generation Prompt for Imagen 3 to create a vintage national-park-style educational infographic poster (the canvas shape is set separately; keep the title, diagram and panels well inside the edges).
    - The visual MUST follow the formula of high-end geological field manuals:
      * A bold, aged slab-serif banner title at the top.
      * A 3D cutaway / cross-section diagram showing water dynamics (arrows for current speed), gravel stratification, and bedrock cracks trapping gold flakes.

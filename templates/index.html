@@ -300,7 +300,7 @@
                                     <button type="button" class="fb-more" @click="more = !more"
                                             x-text="more ? 'Tampilkan lebih sedikit' : 'Lihat selengkapnya'"></button>
                                     <div class="fb-media cursor-zoom-in"
-                                         :style="`aspect-ratio: ${((postPage(currentPost) && postPage(currentPost).aspect_ratio) || '3:4').replace(':', '/')}`"
+                                         :style="`aspect-ratio: ${((postPage(currentPost) && postPage(currentPost).aspect_ratio) || '4:5').replace(':', '/')}`"
                                          @click="openImageModal(currentPost.image_url)" @keydown.enter="openImageModal(currentPost.image_url)"
                                          role="button" tabindex="0" aria-label="Perbesar poster">
                                         <img :src="currentPost.image_url" alt="Poster infografis edukasi emas">
@@ -501,7 +501,7 @@
                                 x-text="feed.expanded[post.id] ? 'Tampilkan lebih sedikit' : 'Lihat selengkapnya'"></button>
 
                         <div class="fb-media cursor-zoom-in"
-                             :style="`aspect-ratio: ${((feedPage(post) && feedPage(post).aspect_ratio) || '3:4').replace(':', '/')}`"
+                             :style="`aspect-ratio: ${((feedPage(post) && feedPage(post).aspect_ratio) || '4:5').replace(':', '/')}`"
                              @click="openImageModal(post.image_url)" @keydown.enter="openImageModal(post.image_url)"
                              role="button" tabindex="0" aria-label="Perbesar poster">
                             <img :src="post.image_url" alt="Poster infografis edukasi emas" loading="lazy">
@@ -1306,7 +1306,7 @@
                                     <label :for="`ratio-${p.id}`" class="block text-xs font-medium text-slate-300 mb-1">Rasio Poster</label>
                                     <select :id="`ratio-${p.id}`" x-model="p.aspect_ratio" @change="p.dirty = true"
                                             class="w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:ring-2 focus:ring-gold-500/60">
-                                        <option value="3:4">3:4 Portrait</option>
+                                        <option value="4:5">4:5 Portrait (Facebook + Instagram)</option>
                                         <option value="1:1">1:1 Square</option>
                                     </select>
                                 </div>

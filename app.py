@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 
 from config import (
+    normalize_aspect_ratio,
     BASE_DIR,
     STORAGE_DIR,
     IMAGES_DIR,
@@ -804,7 +805,7 @@ def generate_content_endpoint(req: GenerateRequest, db: Session = Depends(get_db
         # Deleted in another tab: don't spend AI credits on a draft that has no page.
         return {"success": False, "message": "Fanspage tujuan tidak ditemukan. Muat ulang halaman lalu pilih Fanspage."}
     language = req.language or (page.content_language if page else None) or DEFAULT_CONTENT_LANGUAGE
-    aspect_ratio = req.aspect_ratio or (page.aspect_ratio if page else None) or "3:4"
+    aspect_ratio = normalize_aspect_ratio(req.aspect_ratio or (page.aspect_ratio if page else None))
 
     # 1. Select Topic (Adaptive or Manual) using this page's learned weights
     topic = None
@@ -1029,7 +1030,7 @@ def regenerate_image_endpoint(post_id: int, db: Session = Depends(get_db)):
 
     # The ratio belongs to the Fanspage this post was written for, not to a global setting.
     page = get_page(db, post.page_id) if post.page_id else None
-    aspect_ratio = (page.aspect_ratio if page else None) or "3:4"
+    aspect_ratio = normalize_aspect_ratio(page.aspect_ratio if page else None)
 
     try:
         old_image_path = post.image_path

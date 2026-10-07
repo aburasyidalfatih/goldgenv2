@@ -362,3 +362,9 @@ def test_generate_untuk_fanspage_terhapus_ditolak(client, make_page, fake_gemini
 
     assert res["success"] is False and "tidak ditemukan" in res["message"]
     assert fake_gemini["calls"] == [] and db.query(Post).count() == 0
+
+
+def test_rasio_lama_di_permintaan_menjadi_standar_4_5(client, make_page, fake_gemini, with_gemini_key):
+    page = make_page("111")
+    client.post("/api/generate", json={"topic_id": "auto", "page_id": page["id"], "aspect_ratio": "3:4"})
+    assert fake_gemini["ratios"][-1] == "4:5"
