@@ -19,6 +19,16 @@ IMAGE_TIMEOUT = 300   # image models regularly take more than a minute
 DALLE3_SIZES = {"portrait": "1024x1792", "landscape": "1792x1024", "square": "1024x1024"}
 GPT_IMAGE_SIZES = {"portrait": "1024x1536", "landscape": "1536x1024", "square": "1024x1024"}
 DALLE3_PROMPT_LIMIT = 4000
+# gpt-image-2 and later accept any size (edges multiples of 16, 655,360 to
+# 8,294,400 pixels), so posters come out exactly in the Fanspage's ratio.
+# 1088x1360 is 4:5 at about Instagram's 1080 width, with fewer pixels (and
+# image tokens) than the 1024x1536 portrait canvas.
+GPT_IMAGE_EXACT_SIZES = {"4:5": "1088x1360", "1:1": "1024x1024"}
+
+
+def _accepts_any_size(model: str) -> bool:
+    m = model.lower()
+    return m.startswith("gpt-image-") and not m.startswith("gpt-image-1")
 
 
 def _headers(api_key: str) -> dict:
@@ -117,7 +127,9 @@ def generate_image_bytes(api_key: str, model: str, prompt: str, aspect_ratio: st
     """
     is_dalle3 = model.lower().startswith("dall-e-3")
     sizes = DALLE3_SIZES if is_dalle3 else GPT_IMAGE_SIZES
-    body = {"model": model, "prompt": prompt, "n": 1, "size": sizes[orientation(aspect_ratio)]}
+    canvas = sizes[orientation(aspect_ratio)]
+    exact = GPT_IMAGE_EXACT_SIZES.get(aspect_ratio) if _accepts_any_size(model) else None
+    body = {"model": model, "prompt": prompt, "n": 1, "size": exact or canvas}
     if is_dalle3:
         body["prompt"] = prompt[:DALLE3_PROMPT_LIMIT]
         body["response_format"] = "b64_json"   # gpt-image models always return base64
@@ -126,6 +138,14 @@ def generate_image_bytes(api_key: str, model: str, prompt: str, aspect_ratio: st
 
     response = _post_dropping_unsupported(f"{API_BASE}/images/generations", api_key, body,
                                           ("quality",), IMAGE_TIMEOUT)
+    if (exact and exact != canvas and response.status_code == 400
+            and "size" in _error_message(response).lower()):
+        # A model that only knows the standard canvases: use the nearest one
+        # (posters outside Instagram's range are padded when sent there).
+        logger.info(f"OpenAI model '{model}' rejected size {exact}; using {canvas}.")
+        body["size"] = canvas
+        response = _post_dropping_unsupported(f"{API_BASE}/images/generations", api_key, body,
+                                              ("quality",), IMAGE_TIMEOUT)
     _raise_for_error(response)
 
     data = response.json().get("data") or []

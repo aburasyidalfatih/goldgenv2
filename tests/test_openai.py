@@ -178,6 +178,10 @@ def test_error_openai_tidak_membocorkan_kunci(monkeypatch):
     ("1:1", "gpt-image-1", "1024x1024"),
     ("16:9", "gpt-image-1", "1536x1024"),
     ("4:5", "dall-e-3", "1024x1792"),
+    ("4:5", "gpt-image-1", "1024x1536"),
+    ("4:5", "gpt-image-2", "1088x1360"),
+    ("4:5", "gpt-image-2.5-flare", "1088x1360"),
+    ("1:1", "gpt-image-2.5-sunburst", "1024x1024"),
 ])
 def test_ukuran_kanvas_mengikuti_rasio(monkeypatch, ratio, model, size):
     dikirim = {}
@@ -352,3 +356,19 @@ def test_imagen_mendapat_kanvas_terdekat_untuk_4_5(tmp_dir):
 
     imagen_client._generate_via_imagen(type("C", (), {"models": Models()})(), "imagen-4", "p", "4:5", tmp_dir / "x.jpg")
     assert dipakai["aspect_ratio"] == "3:4"
+
+
+def test_model_yang_menolak_ukuran_4_5_memakai_kanvas_standar(monkeypatch):
+    """Model yang hanya mengenal kanvas standar: dicoba ulang di 1024x1536, bukan gagal."""
+    ukuran = []
+
+    def post(url, headers, json, timeout):
+        ukuran.append(json["size"])
+        if json["size"] == "1088x1360":
+            return FakeResponse(400, {"error": {"message": "Invalid value for 'size': '1088x1360'."}})
+        return FakeResponse(200, {"data": [{"b64_json": _png_b64()}]})
+
+    monkeypatch.setattr(openai_client.requests, "post", post)
+    openai_client.generate_image_bytes("sk-x", "gpt-image-2-mini", "poster", "4:5")
+
+    assert ukuran == ["1088x1360", "1024x1536"]

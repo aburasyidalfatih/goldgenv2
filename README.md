@@ -27,7 +27,7 @@ Aplikasi cerdas untuk memproduksi konten edukasi visual (poster infografis geolo
    * **Kendali biaya** (tab Pengaturan): *Tingkat Penalaran Teks* (default Rendah — token "berpikir" ditagih sebagai output, dan caption tidak butuh penalaran berat), *Kualitas Gambar OpenAI* (default Sedang ±$0,04/gambar; *Otomatis* bisa memilih kualitas mahal), dan model gambar Gemini hemat `gemini-3.1-flash-lite-image` (±$0,034 vs ±$0,067/gambar). Rasio poster Fanspage kini juga dikirim ke model gambar Gemini.
    * **Identitas visual per Fanspage**: tiap Fanspage memilih *Tema Warna Poster* di tab Fanspage — 9 pilihan: Vintage Parchment, Midnight Gold, Forest & Copper, Desert Sunset, Glacier Blue, Blueprint, Volcanic, Crimson Ore, atau Sage & Clay — dan paletnya dipaksakan ke prompt gambar. Setiap poster diberi **watermark nama Fanspage** di pojok kanan bawah; watermark digambar oleh aplikasi (bukan diminta ke AI), jadi ejaan dan posisinya selalu tepat tanpa biaya tambahan.
    * **Rasio poster standar 4:5** (1080×1350). Rasio ini adalah rasio potret tertinggi yang diterima Instagram, dan tampil penuh di feed Facebook, sehingga satu poster bisa dipakai untuk keduanya. Pilihan lainnya hanya 1:1. Fanspage yang masih tersimpan dengan rasio lama (3:4) otomatis dipindah ke 4:5 saat aplikasi start.
-   * OpenAI hanya menyediakan kanvas potret 2:3, persegi, dan lanskap; poster dibuat di kanvas yang paling dekat dengan rasio Fanspage.
+   * Model gambar OpenAI `gpt-image-2` ke atas membuat poster tepat sesuai rasio Fanspage (4:5 = 1088×1360, atau 1:1). Model lama (dan model yang menolak ukuran itu) memakai kanvas terdekat, yaitu potret 2:3 atau persegi.
    * Uji coba validitas API Key dan token dalam 1 klik.
    * Responsif penuh: navigasi tab tetap terjangkau di HP, tablet, dan desktop.
    * Seluruh aset UI (Tailwind, Alpine, FontAwesome) di-*bundle* lokal di `static/vendor/` — dashboard tetap utuh tanpa koneksi internet.
@@ -84,7 +84,7 @@ Di tab **Fanspage**, nyalakan **Juga posting ke Instagram** pada halaman yang pu
   * Page Access Token berizin `instagram_basic` dan `instagram_content_publish`;
   * aplikasi bisa diakses lewat **domain HTTPS**, karena Instagram mengunduh poster dari alamat publik aplikasi. Buka dashboard sekali lewat domain itu, atau isi `PUBLIC_BASE_URL`.
 * Poster tetap terkunci login. Instagram mendapat link acak khusus satu poster yang kedaluwarsa sendiri.
-* Poster 4:5 dan 1:1 dikirim apa adanya. Poster lama 3:4 atau kanvas 2:3 dari OpenAI diberi bingkai menjadi 4:5, tidak pernah dipotong.
+* Poster 4:5 dan 1:1 (Gemini maupun OpenAI `gpt-image-2` ke atas) dikirim apa adanya. Hanya poster lama 3:4 atau kanvas 2:3 dari model OpenAI lama yang diberi bingkai menjadi 4:5, tidak pernah dipotong.
 * Bila gagal, dicoba lagi sampai 3 kali dan dikirim email peringatan. Bila koneksi terputus saat menayangkan, tidak dicoba ulang supaya tidak tayang dua kali.
 * Link Instagram tampil di Studio, beranda, dan Riwayat.
 
