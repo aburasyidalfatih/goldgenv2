@@ -29,6 +29,7 @@ from core.topic_evolution import evolve_topics
 from core.maintenance import remove_generated_image, cleanup_orphan_images
 from core.ai_provider import ai_backend
 from core.comment_reply import process_page_comments
+from core.promo_comment import process_page_promos
 from core.gemini_client import generate_post_content
 from core.imagen_client import generate_poster_image
 from core.fb_client import publish_photo_to_page
@@ -306,6 +307,28 @@ def comment_reply_job():
             notify(db, "reply-job", "Balas komentar otomatis error",
                    f"Pemeriksaan komentar error terus selama {minutes} menit terakhir.\n\nError: {e}",
                    cooldown_hours=12)
+    finally:
+        db.close()
+
+
+PROMO_INTERVAL_MINUTES = 5
+
+
+def promo_comment_job():
+    """
+    Every few minutes: posts the page's promo first comment under its posts that
+    went live a couple of minutes ago (see core/promo_comment.py).
+    """
+    db = SessionLocal()
+    try:
+        pages = (db.query(FacebookPage)
+                   .filter(FacebookPage.is_active.isnot(False), FacebookPage.promo_enabled.is_(True))
+                   .all())
+        for page in pages:
+            process_page_promos(db, page)
+    except Exception as e:
+        logger.error(f"[Scheduler] Error during promo comment job: {e}")
+        db.rollback()
     finally:
         db.close()
 
@@ -643,6 +666,16 @@ def start_scheduler():
         comment_reply_job,
         IntervalTrigger(minutes=COMMENT_REPLY_INTERVAL_MINUTES, timezone=SCHEDULER_TZ),
         id='comment_reply_job',
+        replace_existing=True,
+        misfire_grace_time=300,
+        coalesce=True,
+        max_instances=1,
+    )
+    # First-comment promotion under freshly published posts.
+    scheduler.add_job(
+        promo_comment_job,
+        IntervalTrigger(minutes=PROMO_INTERVAL_MINUTES, timezone=SCHEDULER_TZ),
+        id='promo_comment_job',
         replace_existing=True,
         misfire_grace_time=300,
         coalesce=True,

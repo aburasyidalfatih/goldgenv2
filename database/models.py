@@ -44,6 +44,13 @@ class FacebookPage(Base):
     reply_last_run = Column(DateTime, nullable=True)
     reply_last_error = Column(Text, nullable=True)
 
+    # First-comment promotion: the page comments a link (e.g. its website) under
+    # each of its new posts, worded differently every time.
+    promo_enabled = Column(Boolean, default=False)
+    promo_url = Column(String(500), default="")
+    promo_note = Column(Text, default="")          # what the link offers, for the AI
+    promo_last_error = Column(Text, nullable=True)
+
     # Focus-phase rotation over the page's top reach winners: which winner family
     # leads (a change restarts the rotation at #1) and which slot comes next.
     focus_leader_key = Column(Integer, nullable=True)
@@ -139,6 +146,12 @@ class Post(Base):
     created_at = Column(DateTime, default=utc_now)
     published_at = Column(DateTime, nullable=True)
     error_message = Column(Text, nullable=True)
+
+    # First-comment promotion: None (not yet) | 'posting' | 'posted' | 'failed'
+    promo_status = Column(String(20), nullable=True)
+    promo_comment = Column(Text, nullable=True)
+    promo_comment_fb_id = Column(String(100), nullable=True)
+    promo_attempts = Column(Integer, default=0)
 
     topic = relationship("ContentTopic", back_populates="posts")
     page = relationship("FacebookPage", back_populates="posts")

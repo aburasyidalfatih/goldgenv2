@@ -1339,6 +1339,44 @@
                                 </label>
                             </div>
 
+                            <!-- First-comment promotion -->
+                            <div class="p-3 rounded-lg border border-darkborder bg-slate-900/60 space-y-2">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <p class="text-xs font-bold text-white flex items-center gap-2">
+                                            <i class="fa-solid fa-link text-gold-400"></i> Komentar promosi pertama
+                                        </p>
+                                        <p class="text-xs mt-0.5 text-slate-400">
+                                            Fanspage mengomentari link ini di tiap postingan baru, beberapa menit setelah tayang. Kalimatnya ditulis AI dan selalu berbeda.
+                                        </p>
+                                    </div>
+                                    <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                                        <input type="checkbox" class="sr-only peer" :aria-label="`Komentar promosi untuk ${p.name}`"
+                                               :checked="p.promo_enabled"
+                                               @change="p.promo_enabled = $event.target.checked; p.dirty = true">
+                                        <div class="w-11 h-6 bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-gold-500/60 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-gold-500"></div>
+                                    </label>
+                                </div>
+                                <div>
+                                    <label :for="`promo-url-${p.id}`" class="block text-xs font-medium text-slate-300 mb-1">Alamat web</label>
+                                    <input :id="`promo-url-${p.id}`" type="url" x-model="p.promo_url" @input="p.dirty = true"
+                                           placeholder="https://firstflake.com/"
+                                           class="w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-xs font-mono text-slate-100 focus:outline-none focus:ring-2 focus:ring-gold-500/60">
+                                </div>
+                                <div>
+                                    <label :for="`promo-note-${p.id}`" class="block text-xs font-medium text-slate-300 mb-1">Isi web ini (opsional, agar AI tidak mengarang)</label>
+                                    <textarea :id="`promo-note-${p.id}`" rows="2" x-model="p.promo_note" @input="p.dirty = true"
+                                              placeholder="Contoh: panduan pemula menemukan serpihan emas pertama dalam 7 kali turun lapangan"
+                                              class="w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:ring-2 focus:ring-gold-500/60"></textarea>
+                                </div>
+                                <template x-if="p.promo_last_comment">
+                                    <p class="text-xs text-slate-400"><span class="text-slate-300 font-semibold">Terakhir:</span> <span x-text="p.promo_last_comment"></span></p>
+                                </template>
+                                <template x-if="p.promo_enabled && p.promo_last_error">
+                                    <p class="text-xs text-rose-300" x-text="`Gagal terakhir: ${p.promo_last_error}`"></p>
+                                </template>
+                            </div>
+
                             <!-- Actions -->
                             <div class="flex flex-wrap gap-2">
                                 <button @click="reverifyPage(p)" :disabled="verifyingPageId === p.id"

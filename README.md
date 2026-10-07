@@ -72,6 +72,17 @@ Tab **Komentar** membalas komentar pengikut di **semua postingan** Fanspage, bai
 * Saat Fanspage ditambahkan atau diverifikasi ulang, **User Token otomatis ditukar dengan Page Token**. User Token tidak bisa membalas atas nama Fanspage. Page ID juga disimpan dalam bentuk angka walau yang diketik username, agar komentar Fanspage sendiri dikenali.
 * **Izin token yang dibutuhkan**: `pages_read_engagement`, `pages_read_user_content`, `pages_manage_engagement`. Bila kurang, pesan kesalahannya tampil di panel Balasan Otomatis.
 
+## 🔗 Komentar Promosi Pertama
+
+Di tab **Fanspage**, tiap halaman bisa mengaktifkan **Komentar promosi pertama**. Isi alamat web (misalnya `https://firstflake.com/`), dan boleh juga deskripsi singkat isi webnya, lalu klik **Simpan Preferensi**.
+
+* Beberapa menit setelah postingan tayang (minimal 2 menit, dicek tiap 5 menit), Fanspage mengomentari postingan itu sendiri dengan **satu** kalimat ajakan berisi link tersebut.
+* Kalimatnya ditulis AI dan disesuaikan dengan topik postingan serta bahasa Fanspage. Kalimat dibandingkan dengan 12 komentar promosi terakhir. Bila terlalu mirip, AI diminta menulis ulang, dan bila tetap mirip dipakai kalimat cadangan yang berbeda.
+* Hanya berlaku untuk postingan yang dibuat aplikasi ini dan tayang dalam 24 jam terakhir, maksimal satu komentar per postingan. Bila gagal, dicoba lagi sampai 3 kali.
+* Bila koneksi terputus saat mengirim, postingan itu tidak dicoba ulang, supaya tidak ada komentar ganda.
+* Komentar Fanspage sendiri tidak dibalas oleh fitur Balas Komentar Otomatis.
+* Butuh izin token `pages_manage_engagement` (sama dengan balas komentar).
+
 ## 🚀 Cara Menjalankan Lokal di Windows
 
 1. **Jalankan via Script Otomatis**:

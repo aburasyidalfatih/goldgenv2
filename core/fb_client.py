@@ -315,3 +315,8 @@ def reply_to_comment(comment_id: str, access_token: str, message: str) -> dict:
             "permission_error": err.get("code") in PERMISSION_ERROR_CODES,
         }
     return {"success": True, "reply_id": data.get("id")}
+
+
+def comment_on_post(post_id: str, access_token: str, message: str) -> dict:
+    """Posts `message` as the page's own comment under one of its posts."""
+    return reply_to_comment(post_id, access_token, message)

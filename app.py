@@ -55,6 +55,7 @@ from core.feedback_loop import (
 )
 from core.topic_evolution import evolve_topics, retire_topic, reactivate_topic
 from core import comment_reply
+from core.promo_comment import recover_interrupted_promos
 from core import auth
 from core.poster_style import THEMES
 from core import notifier
@@ -169,6 +170,9 @@ async def lifespan(app: FastAPI):
         interrupted = comment_reply.recover_interrupted_replies(db)
         if interrupted:
             logger.warning(f"{interrupted} comment reply(ies) were interrupted mid-send and marked as failed.")
+        promos = recover_interrupted_promos(db)
+        if promos:
+            logger.warning(f"{promos} promo comment(s) were interrupted mid-send; not retried to avoid doubles.")
         db.commit()
         bootstrap_first_user(db)
     finally:

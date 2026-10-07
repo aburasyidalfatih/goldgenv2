@@ -14,6 +14,7 @@ from core.utils import iso_utc
 from core.poster_style import THEMES, normalize_theme
 from database.models import ContentTopic, FacebookPage, Post, PageTopicWeight, CommentReply
 from core.fb_client import test_facebook_credentials
+from core.promo_comment import normalize_url
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,12 @@ logger = logging.getLogger(__name__)
 def serialize_page(page: FacebookPage, db: Session | None = None) -> dict:
     """Page data for the UI. The access token is never exposed in cleartext."""
     published = failed = pending_replies = 0
+    last_promo = None
     if db is not None:
+        row = (db.query(Post.promo_comment)
+                 .filter(Post.page_id == page.id, Post.promo_status == "posted")
+                 .order_by(Post.published_at.desc()).first())
+        last_promo = row[0] if row else None
         published = db.query(Post).filter(Post.page_id == page.id, Post.status == "published").count()
         failed = db.query(Post).filter(Post.page_id == page.id, Post.status == "failed").count()
         pending_replies = (db.query(CommentReply)
@@ -53,6 +59,11 @@ def serialize_page(page: FacebookPage, db: Session | None = None) -> dict:
         "reply_last_run": iso_utc(page.reply_last_run),
         "reply_last_error": page.reply_last_error,
         "pending_replies": pending_replies,
+        "promo_enabled": bool(page.promo_enabled),
+        "promo_url": page.promo_url or "",
+        "promo_note": page.promo_note or "",
+        "promo_last_error": page.promo_last_error,
+        "promo_last_comment": last_promo,
     }
 
 
@@ -183,6 +194,22 @@ def update_page(db: Session, page_row_id: int, payload: dict) -> dict:
             page.reply_max_per_hour = max(1, min(60, int(payload["reply_max_per_hour"])))
         except (TypeError, ValueError):
             return {"success": False, "message": "Batas balasan per jam harus berupa angka 1–60."}
+
+    # First-comment promotion
+    if payload.get("promo_url") is not None:
+        url = normalize_url(str(payload["promo_url"]))
+        if url and (" " in url or "." not in url):
+            return {"success": False, "message": "Alamat web promosi tidak valid. Contoh: https://firstflake.com/"}
+        page.promo_url = url
+    if payload.get("promo_note") is not None:
+        page.promo_note = str(payload["promo_note"]).strip()[:500]
+    if payload.get("promo_enabled") is not None:
+        enabled = bool(payload["promo_enabled"])
+        if enabled and not page.promo_url:
+            return {"success": False, "message": "Isi alamat web yang dipromosikan sebelum menyalakan komentar promosi."}
+        page.promo_enabled = enabled
+        if enabled:
+            page.promo_last_error = None
 
     # A new token is only stored when it is not the mask placeholder.
     new_token = payload.get("access_token")

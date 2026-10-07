@@ -555,7 +555,7 @@ function autoPosterApp() {
             if (this.savingPageId) return;
             this.savingPageId = page.id;
             try {
-                const before = JSON.stringify([page.content_language, page.aspect_ratio, page.color_theme, page.auto_post_times, page.autopilot_enabled, page.is_active]);
+                const before = JSON.stringify([page.content_language, page.aspect_ratio, page.color_theme, page.auto_post_times, page.autopilot_enabled, page.is_active, page.promo_enabled, page.promo_url, page.promo_note]);
                 const res = await fetch(`/api/pages/${page.id}`, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
@@ -566,12 +566,17 @@ function autoPosterApp() {
                         color_theme: page.color_theme,
                         auto_post_times: page.auto_post_times,
                         autopilot_enabled: page.autopilot_enabled,
-                        is_active: page.is_active
+                        is_active: page.is_active,
+                        promo_enabled: page.promo_enabled,
+                        promo_url: page.promo_url,
+                        promo_note: page.promo_note
                     })
                 });
                 const data = await res.json();
                 if (data.success) {
-                    page.dirty = before !== JSON.stringify([page.content_language, page.aspect_ratio, page.color_theme, page.auto_post_times, page.autopilot_enabled, page.is_active]);
+                    page.dirty = before !== JSON.stringify([page.content_language, page.aspect_ratio, page.color_theme, page.auto_post_times, page.autopilot_enabled, page.is_active, page.promo_enabled, page.promo_url, page.promo_note]);
+                    // Show the address as stored (https:// added) unless it was edited meanwhile.
+                    if (data.page && !page.dirty) Object.assign(page, { promo_url: data.page.promo_url, promo_last_error: data.page.promo_last_error });
                     await this.fetchScheduleStatus();
                     this.showToast(`Pengaturan '${page.name}' disimpan.`);
                 } else {

@@ -31,6 +31,14 @@ ADDED_COLUMNS = [
     ("facebook_pages", "focus_leader_key", "INTEGER"),
     ("facebook_pages", "focus_cursor", "INTEGER DEFAULT 0"),
     ("facebook_pages", "color_theme", "VARCHAR(30) DEFAULT 'parchment'"),
+    ("facebook_pages", "promo_enabled", "BOOLEAN DEFAULT 0"),
+    ("facebook_pages", "promo_url", "VARCHAR(500) DEFAULT ''"),
+    ("facebook_pages", "promo_note", "TEXT DEFAULT ''"),
+    ("facebook_pages", "promo_last_error", "TEXT"),
+    ("posts", "promo_status", "VARCHAR(20)"),
+    ("posts", "promo_comment", "TEXT"),
+    ("posts", "promo_comment_fb_id", "VARCHAR(100)"),
+    ("posts", "promo_attempts", "INTEGER DEFAULT 0"),
 ]
 
 
