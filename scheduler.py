@@ -30,6 +30,7 @@ from core.maintenance import remove_generated_image, cleanup_orphan_images
 from core.ai_provider import ai_backend
 from core.comment_reply import process_page_comments
 from core.promo_comment import process_page_promos
+from core.instagram import process_page_instagram
 from core.gemini_client import generate_post_content
 from core.imagen_client import generate_poster_image
 from core.fb_client import publish_photo_to_page
@@ -328,6 +329,32 @@ def promo_comment_job():
             process_page_promos(db, page)
     except Exception as e:
         logger.error(f"[Scheduler] Error during promo comment job: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
+INSTAGRAM_INTERVAL_MINUTES = 5
+
+
+def instagram_job():
+    """
+    Every few minutes: publishes each Instagram-enabled page's newly published
+    posts to its linked Instagram account (see core/instagram.py).
+    """
+    db = SessionLocal()
+    try:
+        pages = (db.query(FacebookPage)
+                   .filter(FacebookPage.is_active.isnot(False), FacebookPage.ig_enabled.is_(True))
+                   .all())
+        for page in pages:
+            res = process_page_instagram(db, page)
+            if res.get("message") and not res.get("published"):
+                notify(db, f"instagram:{page.id}", f"Posting Instagram '{page.name}' gagal",
+                       f"Postingan Fanspage '{page.name}' tidak bisa dipublikasikan ke Instagram.\n\n"
+                       f"Pesan: {res['message']}", cooldown_hours=12)
+    except Exception as e:
+        logger.error(f"[Scheduler] Error during Instagram job: {e}")
         db.rollback()
     finally:
         db.close()
@@ -676,6 +703,16 @@ def start_scheduler():
         promo_comment_job,
         IntervalTrigger(minutes=PROMO_INTERVAL_MINUTES, timezone=SCHEDULER_TZ),
         id='promo_comment_job',
+        replace_existing=True,
+        misfire_grace_time=300,
+        coalesce=True,
+        max_instances=1,
+    )
+    # Instagram cross-posting of freshly published posts.
+    scheduler.add_job(
+        instagram_job,
+        IntervalTrigger(minutes=INSTAGRAM_INTERVAL_MINUTES, timezone=SCHEDULER_TZ),
+        id='instagram_job',
         replace_existing=True,
         misfire_grace_time=300,
         coalesce=True,

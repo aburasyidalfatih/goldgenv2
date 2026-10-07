@@ -15,6 +15,7 @@ from core.poster_style import THEMES, normalize_theme
 from database.models import ContentTopic, FacebookPage, Post, PageTopicWeight, CommentReply
 from core.fb_client import test_facebook_credentials
 from core.promo_comment import normalize_url
+from core.instagram import link_instagram
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,9 @@ def serialize_page(page: FacebookPage, db: Session | None = None) -> dict:
         "promo_note": page.promo_note or "",
         "promo_last_error": page.promo_last_error,
         "promo_last_comment": last_promo,
+        "ig_enabled": bool(page.ig_enabled),
+        "ig_username": page.ig_username or "",
+        "ig_last_error": page.ig_last_error,
     }
 
 
@@ -211,6 +215,19 @@ def update_page(db: Session, page_row_id: int, payload: dict) -> dict:
         if enabled:
             page.promo_last_error = None
 
+    # Instagram cross-posting
+    if payload.get("ig_enabled") is not None:
+        enabled = bool(payload["ig_enabled"])
+        if enabled and not page.ig_enabled:
+            if not page.access_token:
+                return {"success": False, "message": "Fanspage ini belum punya Access Token."}
+            res = link_instagram(db, page)
+            if not res.get("success"):
+                db.commit()
+                return {"success": False, "message": res.get("message")}
+            page.ig_enabled_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        page.ig_enabled = enabled
+
     # A new token is only stored when it is not the mask placeholder.
     new_token = payload.get("access_token")
     if new_token and new_token != SECRET_MASK:
@@ -249,6 +266,8 @@ def reverify_page(db: Session, page_row_id: int) -> dict:
     page.fan_count = result.get("fan_count", page.fan_count) or 0
     page.token_status = "Terverifikasi"
     page.last_verified_at = datetime.now(timezone.utc)
+    if page.ig_enabled:
+        link_instagram(db, page)        # account may have been relinked
     db.commit()
     db.refresh(page)
     return {"success": True, "message": f"Terhubung: {page.name}", "page": serialize_page(page, db)}

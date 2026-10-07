@@ -400,10 +400,21 @@
                                             <i class="fa-solid fa-circle-check"></i>
                                             <span x-text="`Sudah tayang di ${postPage(currentPost)?.name || 'Fanspage'}`"></span>
                                         </span>
-                                        <a :href="currentPost.fb_post_url" target="_blank" rel="noopener"
-                                           class="px-3 py-2 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white transition flex items-center gap-2">
-                                            <i class="fa-brands fa-facebook"></i> Buka di Facebook
-                                        </a>
+                                        <div class="flex flex-wrap gap-2">
+                                            <a :href="currentPost.fb_post_url" target="_blank" rel="noopener"
+                                               class="px-3 py-2 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white transition flex items-center gap-2">
+                                                <i class="fa-brands fa-facebook"></i> Buka di Facebook
+                                            </a>
+                                            <template x-if="currentPost.ig_permalink">
+                                                <a :href="currentPost.ig_permalink" target="_blank" rel="noopener"
+                                                   class="px-3 py-2 rounded-lg text-xs font-semibold border border-darkborder bg-slate-900 hover:bg-slate-800 text-slate-100 transition flex items-center gap-2">
+                                                    <i class="fa-brands fa-instagram"></i> Buka di Instagram
+                                                </a>
+                                            </template>
+                                        </div>
+                                        <template x-if="currentPost.ig_error">
+                                            <p class="w-full text-xs text-rose-300" x-text="`Instagram: ${currentPost.ig_error}`"></p>
+                                        </template>
                                     </div>
                                 </template>
 
@@ -533,6 +544,11 @@
                             <template x-if="post.fb_post_url">
                                 <a :href="post.fb_post_url" target="_blank" rel="noopener">
                                     <i class="fa-brands fa-facebook"></i> Buka di Facebook
+                                </a>
+                            </template>
+                            <template x-if="post.ig_permalink">
+                                <a :href="post.ig_permalink" target="_blank" rel="noopener">
+                                    <i class="fa-brands fa-instagram"></i> Instagram
                                 </a>
                             </template>
                         </div>
@@ -900,6 +916,12 @@
                                                 <i class="fa-brands fa-facebook"></i>
                                             </a>
                                         </template>
+                                        <template x-if="p.ig_permalink">
+                                            <a :href="p.ig_permalink" target="_blank" rel="noopener" title="Lihat di Instagram" aria-label="Lihat di Instagram"
+                                               class="inline-block px-2 py-1 rounded bg-slate-800 text-slate-200 hover:bg-slate-700 border border-darkborder transition">
+                                                <i class="fa-brands fa-instagram"></i>
+                                            </a>
+                                        </template>
                                         <template x-if="p.status !== 'published'">
                                             <button @click="askPublish(p)" title="Publish sekarang"
                                                     class="px-2 py-1 rounded bg-gold-500/20 text-gold-300 hover:bg-gold-500/30 border border-gold-500/30 transition">
@@ -955,6 +977,10 @@
                                     <template x-if="p.fb_post_url">
                                         <a :href="p.fb_post_url" target="_blank" rel="noopener"
                                            class="px-2 py-1 rounded text-xs bg-blue-600/20 text-blue-300 border border-blue-500/30">Facebook</a>
+                                    </template>
+                                    <template x-if="p.ig_permalink">
+                                        <a :href="p.ig_permalink" target="_blank" rel="noopener"
+                                           class="px-2 py-1 rounded text-xs bg-slate-800 text-slate-200 border border-darkborder">Instagram</a>
                                     </template>
                                     <template x-if="p.status !== 'published'">
                                         <button @click="askPublish(p)" class="px-2 py-1 rounded text-xs bg-gold-500/20 text-gold-300 border border-gold-500/30">
@@ -1337,6 +1363,32 @@
                                            @change="p.autopilot_enabled = $event.target.checked; p.dirty = true">
                                     <div class="w-11 h-6 bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-gold-500/60 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-gold-500"></div>
                                 </label>
+                            </div>
+
+                            <!-- Instagram cross-posting -->
+                            <div class="p-3 rounded-lg border border-darkborder bg-slate-900/60 space-y-1.5">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <p class="text-xs font-bold text-white flex items-center gap-2">
+                                            <i class="fa-brands fa-instagram text-gold-400"></i> Juga posting ke Instagram
+                                        </p>
+                                        <p class="text-xs mt-0.5 text-slate-400">
+                                            Poster dan caption yang sama dikirim ke akun Instagram Profesional yang terhubung ke Fanspage ini, beberapa menit setelah tayang di Facebook.
+                                        </p>
+                                    </div>
+                                    <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                                        <input type="checkbox" class="sr-only peer" :aria-label="`Posting ke Instagram untuk ${p.name}`"
+                                               :checked="p.ig_enabled"
+                                               @change="p.ig_enabled = $event.target.checked; p.dirty = true">
+                                        <div class="w-11 h-6 bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-gold-500/60 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-gold-500"></div>
+                                    </label>
+                                </div>
+                                <template x-if="p.ig_enabled && p.ig_username">
+                                    <p class="text-xs text-emerald-300" x-text="`Terhubung: @${p.ig_username}`"></p>
+                                </template>
+                                <template x-if="p.ig_enabled && p.ig_last_error">
+                                    <p class="text-xs text-rose-300" x-text="`Gagal terakhir: ${p.ig_last_error}`"></p>
+                                </template>
                             </div>
 
                             <!-- First-comment promotion -->

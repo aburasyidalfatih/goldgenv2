@@ -1,4 +1,5 @@
 import os
+import time
 import requests
 import logging
 from datetime import datetime, timedelta, timezone
@@ -320,3 +321,102 @@ def reply_to_comment(comment_id: str, access_token: str, message: str) -> dict:
 def comment_on_post(post_id: str, access_token: str, message: str) -> dict:
     """Posts `message` as the page's own comment under one of its posts."""
     return reply_to_comment(post_id, access_token, message)
+
+
+# ------------------------------------------------------------------ Instagram
+# Publishing to the Instagram professional account linked to a Page uses the same
+# Page token (needs instagram_basic + instagram_content_publish). Instagram
+# downloads the image itself, so it must be reachable at a public HTTPS URL.
+
+INSTAGRAM_PERMISSION_HINT = (
+    " Pastikan Instagram sudah akun Profesional yang terhubung ke Fanspage, dan Page Access Token "
+    "punya izin instagram_basic serta instagram_content_publish."
+)
+IG_CONTAINER_POLL_SECONDS = 3
+IG_CONTAINER_POLL_TRIES = 20
+
+
+def _ig_error(data: dict) -> str:
+    err = data.get("error") or {}
+    message = err.get("error_user_msg") or err.get("message") or "Unknown Instagram Error"
+    if err.get("code") in PERMISSION_ERROR_CODES or "permission" in message.lower():
+        message += INSTAGRAM_PERMISSION_HINT
+    return message
+
+
+def find_instagram_account(page_id: str, access_token: str) -> dict:
+    """The Instagram professional account linked to the Page, if any."""
+    try:
+        data = requests.get(
+            f"{BASE_GRAPH_URL}/{page_id}",
+            params={"fields": "instagram_business_account{id,username}", "access_token": access_token},
+            timeout=15,
+        ).json()
+    except Exception as e:
+        return {"success": False, "message": f"Koneksi ke Facebook gagal: {redact_secrets(e)}"}
+    if "error" in data:
+        return {"success": False, "message": _ig_error(data)}
+    account = data.get("instagram_business_account") or {}
+    if not account.get("id"):
+        return {"success": False,
+                "message": "Fanspage ini belum terhubung ke akun Instagram Profesional." + INSTAGRAM_PERMISSION_HINT}
+    return {"success": True, "ig_user_id": str(account["id"]), "username": account.get("username") or ""}
+
+
+def publish_photo_to_instagram(ig_user_id: str, access_token: str, image_url: str, caption: str,
+                               sleep=time.sleep) -> dict:
+    """
+    Two steps: create a media container from `image_url`, wait until Instagram has
+    processed it, then publish it. Only the publish call makes the post public, so
+    a failure before it never leaves a half-published post.
+    """
+    try:
+        container = requests.post(
+            f"{BASE_GRAPH_URL}/{ig_user_id}/media",
+            data={"image_url": image_url, "caption": caption, "access_token": access_token},
+            timeout=60,
+        ).json()
+    except Exception as e:
+        return {"success": False, "message": f"Koneksi ke Instagram gagal: {redact_secrets(e)}"}
+    if "error" in container or not container.get("id"):
+        return {"success": False, "message": _ig_error(container),
+                "permission_error": (container.get("error") or {}).get("code") in PERMISSION_ERROR_CODES}
+    creation_id = container["id"]
+
+    status = ""
+    for _ in range(IG_CONTAINER_POLL_TRIES):
+        try:
+            status = (requests.get(f"{BASE_GRAPH_URL}/{creation_id}",
+                                   params={"fields": "status_code", "access_token": access_token},
+                                   timeout=15).json().get("status_code") or "")
+        except Exception:
+            status = ""
+        if status in ("FINISHED", "ERROR", "EXPIRED"):
+            break
+        sleep(IG_CONTAINER_POLL_SECONDS)
+    if status != "FINISHED":
+        return {"success": False,
+                "message": f"Instagram belum selesai memproses gambar (status: {status or 'tidak diketahui'})."}
+
+    try:
+        published = requests.post(
+            f"{BASE_GRAPH_URL}/{ig_user_id}/media_publish",
+            data={"creation_id": creation_id, "access_token": access_token},
+            timeout=60,
+        ).json()
+    except Exception as e:
+        # The post may or may not be live now.
+        return {"success": False, "message": f"Koneksi ke Instagram gagal: {redact_secrets(e)}", "uncertain": True}
+    if "error" in published or not published.get("id"):
+        return {"success": False, "message": _ig_error(published),
+                "permission_error": (published.get("error") or {}).get("code") in PERMISSION_ERROR_CODES}
+
+    media_id = str(published["id"])
+    permalink = None
+    try:
+        permalink = requests.get(f"{BASE_GRAPH_URL}/{media_id}",
+                                 params={"fields": "permalink", "access_token": access_token},
+                                 timeout=15).json().get("permalink")
+    except Exception:
+        pass
+    return {"success": True, "media_id": media_id, "permalink": permalink}

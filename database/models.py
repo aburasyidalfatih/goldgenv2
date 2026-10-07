@@ -51,6 +51,14 @@ class FacebookPage(Base):
     promo_note = Column(Text, default="")          # what the link offers, for the AI
     promo_last_error = Column(Text, nullable=True)
 
+    # Instagram cross-posting: every post published on the page is also published,
+    # same poster and caption, to the Instagram professional account linked to it.
+    ig_enabled = Column(Boolean, default=False)
+    ig_enabled_at = Column(DateTime, nullable=True)   # only posts after this go to Instagram
+    ig_user_id = Column(String(100), nullable=True)
+    ig_username = Column(String(200), nullable=True)
+    ig_last_error = Column(Text, nullable=True)
+
     # Focus-phase rotation over the page's top reach winners: which winner family
     # leads (a change restarts the rotation at #1) and which slot comes next.
     focus_leader_key = Column(Integer, nullable=True)
@@ -152,6 +160,16 @@ class Post(Base):
     promo_comment = Column(Text, nullable=True)
     promo_comment_fb_id = Column(String(100), nullable=True)
     promo_attempts = Column(Integer, default=0)
+
+    # Instagram copy: None (not yet) | 'publishing' | 'published' | 'failed' | 'uncertain'
+    ig_status = Column(String(20), nullable=True)
+    ig_media_id = Column(String(100), nullable=True)
+    ig_permalink = Column(String(500), nullable=True)
+    ig_error = Column(Text, nullable=True)
+    ig_attempts = Column(Integer, default=0)
+    # Short-lived public link Instagram downloads the poster from
+    ig_media_token = Column(String(64), nullable=True, index=True)
+    ig_media_expires = Column(DateTime, nullable=True)
 
     topic = relationship("ContentTopic", back_populates="posts")
     page = relationship("FacebookPage", back_populates="posts")

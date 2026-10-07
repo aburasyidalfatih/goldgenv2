@@ -555,7 +555,7 @@ function autoPosterApp() {
             if (this.savingPageId) return;
             this.savingPageId = page.id;
             try {
-                const before = JSON.stringify([page.content_language, page.aspect_ratio, page.color_theme, page.auto_post_times, page.autopilot_enabled, page.is_active, page.promo_enabled, page.promo_url, page.promo_note]);
+                const before = JSON.stringify([page.content_language, page.aspect_ratio, page.color_theme, page.auto_post_times, page.autopilot_enabled, page.is_active, page.promo_enabled, page.promo_url, page.promo_note, page.ig_enabled]);
                 const res = await fetch(`/api/pages/${page.id}`, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
@@ -569,14 +569,16 @@ function autoPosterApp() {
                         is_active: page.is_active,
                         promo_enabled: page.promo_enabled,
                         promo_url: page.promo_url,
-                        promo_note: page.promo_note
+                        promo_note: page.promo_note,
+                        ig_enabled: page.ig_enabled
                     })
                 });
                 const data = await res.json();
                 if (data.success) {
-                    page.dirty = before !== JSON.stringify([page.content_language, page.aspect_ratio, page.color_theme, page.auto_post_times, page.autopilot_enabled, page.is_active, page.promo_enabled, page.promo_url, page.promo_note]);
+                    page.dirty = before !== JSON.stringify([page.content_language, page.aspect_ratio, page.color_theme, page.auto_post_times, page.autopilot_enabled, page.is_active, page.promo_enabled, page.promo_url, page.promo_note, page.ig_enabled]);
                     // Show the address as stored (https:// added) unless it was edited meanwhile.
-                    if (data.page && !page.dirty) Object.assign(page, { promo_url: data.page.promo_url, promo_last_error: data.page.promo_last_error });
+                    if (data.page && !page.dirty) Object.assign(page, { promo_url: data.page.promo_url, promo_last_error: data.page.promo_last_error,
+                                                                         ig_username: data.page.ig_username, ig_last_error: data.page.ig_last_error });
                     await this.fetchScheduleStatus();
                     this.showToast(`Pengaturan '${page.name}' disimpan.`);
                 } else {

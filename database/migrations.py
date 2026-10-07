@@ -39,6 +39,18 @@ ADDED_COLUMNS = [
     ("posts", "promo_comment", "TEXT"),
     ("posts", "promo_comment_fb_id", "VARCHAR(100)"),
     ("posts", "promo_attempts", "INTEGER DEFAULT 0"),
+    ("facebook_pages", "ig_enabled", "BOOLEAN DEFAULT 0"),
+    ("facebook_pages", "ig_enabled_at", "DATETIME"),
+    ("facebook_pages", "ig_user_id", "VARCHAR(100)"),
+    ("facebook_pages", "ig_username", "VARCHAR(200)"),
+    ("facebook_pages", "ig_last_error", "TEXT"),
+    ("posts", "ig_status", "VARCHAR(20)"),
+    ("posts", "ig_media_id", "VARCHAR(100)"),
+    ("posts", "ig_permalink", "VARCHAR(500)"),
+    ("posts", "ig_error", "TEXT"),
+    ("posts", "ig_attempts", "INTEGER DEFAULT 0"),
+    ("posts", "ig_media_token", "VARCHAR(64)"),
+    ("posts", "ig_media_expires", "DATETIME"),
 ]
 
 

@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse, Response
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
@@ -56,6 +56,7 @@ from core.feedback_loop import (
 from core.topic_evolution import evolve_topics, retire_topic, reactivate_topic
 from core import comment_reply
 from core.promo_comment import recover_interrupted_promos
+from core import instagram
 from core import auth
 from core.poster_style import THEMES
 from core import notifier
@@ -170,6 +171,9 @@ async def lifespan(app: FastAPI):
         interrupted = comment_reply.recover_interrupted_replies(db)
         if interrupted:
             logger.warning(f"{interrupted} comment reply(ies) were interrupted mid-send and marked as failed.")
+        ig_stuck = instagram.recover_interrupted_instagram(db)
+        if ig_stuck:
+            logger.warning(f"{ig_stuck} Instagram post(s) were interrupted mid-publish; not retried to avoid doubles.")
         promos = recover_interrupted_promos(db)
         if promos:
             logger.warning(f"{promos} promo comment(s) were interrupted mid-send; not retried to avoid doubles.")
@@ -207,7 +211,8 @@ def _session_user(token: str):
 @app.middleware("http")
 async def require_login(request: Request, call_next):
     path = request.url.path
-    if path in PUBLIC_PATHS or path.startswith("/static/"):
+    # /media/ig/: random, short-lived links Instagram downloads one poster from.
+    if path in PUBLIC_PATHS or path.startswith("/static/") or path.startswith("/media/ig/"):
         return await call_next(request)
     email = await run_in_threadpool(_session_user, request.cookies.get(auth.SESSION_COOKIE, ""))
     if not email:
@@ -336,8 +341,27 @@ def asset_version() -> str:
     except ValueError:
         return "1"
 
+@app.get("/media/ig/{token}.jpg")
+def instagram_media(token: str, db: Session = Depends(get_db)):
+    """One poster, Instagram-ready (4:5), behind a random link valid for a short time."""
+    post = instagram.post_for_media_token(db, token)
+    if not post or not post.image_path or not Path(post.image_path).is_file():
+        raise HTTPException(status_code=404)
+    return Response(instagram.instagram_image_bytes(post.image_path), media_type="image/jpeg",
+                    headers={"Cache-Control": "no-store"})
+
+def _remember_public_url(url: str):
+    db = SessionLocal()
+    try:
+        instagram.remember_public_base_url(db, url)
+    finally:
+        db.close()
+
 @app.get("/", response_class=HTMLResponse)
 async def serve_dashboard(request: Request):
+    # Instagram downloads posters from this app's public address; the dashboard's
+    # own HTTPS address (behind Dokploy's proxy) is the one that works.
+    await run_in_threadpool(_remember_public_url, str(request.base_url))
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -1185,6 +1209,9 @@ def serialize_post(p: Post, page_names: dict, full: bool = False, with_caption: 
         "status": p.status,
         "fb_post_id": p.fb_post_id,
         "fb_post_url": p.fb_post_url,
+        "ig_status": p.ig_status,
+        "ig_permalink": p.ig_permalink,
+        "ig_error": p.ig_error,
         "error_message": p.error_message,
         "created_at": iso_utc(p.created_at),
         "published_at": iso_utc(p.published_at),
