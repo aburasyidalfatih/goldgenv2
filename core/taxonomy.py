@@ -277,6 +277,65 @@ SEED_TOPICS = [
         "core_concept": "Gold is weighed in troy units: one troy ounce is 31.1 grams, one pennyweight (dwt) is 1.555 grams, and 24 grains make a pennyweight. Natural placer gold is typically 70 to 90 percent pure, and buyers usually pay a fraction of spot for its gold content, while collectors often pay a premium for nice nuggets and specimens. Weigh on a jeweler's scale and check the day's spot price before selling.",
         "visual_blueprint": "Vintage assay-office poster titled 'WHAT'S YOUR GOLD WORTH?'. Antique balance scale weighing a gold vial against brass weights labeled 1 Troy Oz = 31.1 g, 1 dwt = 1.555 g, 24 Grains = 1 dwt. Purity gauge showing natural gold at 70-90% with silver and copper. Flow diagram: Weigh, Estimate Purity, Check Spot Price, Choose a Buyer (Refiner, Collector, Pawn Shop). Bottom panels: Jeweler's Scale, Placer Gold Vial, Specimen Nugget, Assay Button. Aged parchment ledger style.",
         "weight": 1.0
+    },
+    # ------------------------------------------------------------------
+    # Beginner journey: the questions of someone still chasing a first flake.
+    # ------------------------------------------------------------------
+    {
+        "category": "Equipment",
+        "topic_key": "first_trip_minimal_kit",
+        "title": "Your First Trip: The Minimal Kit That Actually Matters",
+        "core_concept": "A first trip needs far less gear than the catalogs suggest: a gold pan with riffles, a classifier screen that fits a 5-gallon bucket, a short shovel, a crevice tool, a snuffer bottle, a sample vial and tweezers. Waterproof boots and a hand lens help. Skip the expensive detector and highbanker until panning skills and a proven spot justify them.",
+        "visual_blueprint": "Vintage field guide flat-lay poster titled 'YOUR FIRST TRIP: THE MINIMAL KIT'. Overhead illustration of gear laid out on a canvas tarp, each item numbered with a label: Gold Pan, Classifier Screen, 5-Gallon Bucket, Short Shovel, Crevice Tool, Snuffer Bottle, Sample Vial, Tweezers, Hand Lens, Waterproof Boots. A crossed-out side box 'NOT YET: Detector, Highbanker'. Bottom strip: packing checklist with tick boxes. Aged parchment, hand-inked labels.",
+        "weight": 1.0
+    },
+    {
+        "category": "Strategy",
+        "topic_key": "picking_your_first_spot",
+        "title": "Reading a Creek in 10 Minutes: Picking Your First Spot",
+        "core_concept": "Before digging, confirm the ground is open to panning, then walk the creek and read it: inside bends, the downstream side of boulders, exposed or shallow bedrock, and gravel with black sand are the low-energy traps where gold drops. Test-pan small samples from several of these spots instead of digging one big hole, and move on from places that show no black sand at all.",
+        "visual_blueprint": "Vintage topographic field poster titled 'READING A CREEK IN 10 MINUTES'. Bird's-eye illustrated map of a winding creek with numbered markers: 1 Inside Bend, 2 Boulder Shadow, 3 Exposed Bedrock, 4 Black Sand Streak, plus a red X on 'Fast Straight Run'. Footprint trail shows the walking route. Side panel: 'Test-Pan 3 Spots Before You Dig' with three small pans comparing results. Aged parchment with contour lines.",
+        "weight": 1.0
+    },
+    {
+        "category": "Equipment",
+        "topic_key": "practice_panning_at_home",
+        "title": "Practice at Home: The Lead Shot Panning Drill",
+        "core_concept": "Panning skill is learned before the creek, not on it. Mix a few pieces of lead fishing shot (lead is heavy like gold, though far less dense) into a bucket of gravel and pan it in a tub of water. Count how many pieces you recover each round; when you keep all of them while working at a steady pace, your technique is ready for real fine gold.",
+        "visual_blueprint": "Vintage instructional poster titled 'THE LEAD SHOT DRILL: PRACTICE AT HOME'. Backyard scene with a washtub, a bucket of gravel and a gold pan. Step sequence: 1 Drop 10 Lead Shot In, 2 Pan as Usual, 3 Count What Stays, 4 Repeat Faster. Scorecard panel with rounds and shots recovered: 6/10, 8/10, 10/10. Small density comparison chart: Quartz 2.65, Lead 11.3, Gold 19.3. Aged parchment, hand-drawn style.",
+        "weight": 1.0
+    },
+    {
+        "category": "Strategy",
+        "topic_key": "no_color_beginner_mistakes",
+        "title": "Trip 3 and Still No Color? 7 Beginner Mistakes",
+        "core_concept": "Most blank days come from a handful of fixable mistakes: panning too fast and washing gold out, scooping loose surface sand instead of digging to the packed layer or bedrock, sampling only one spot, skipping the classifier, working gravel with no black sand, giving up on a spot after a single pan, and mistaking mica or pyrite for gold (or real fine gold for nothing). Fix these and the odds of seeing color change quickly.",
+        "visual_blueprint": "Vintage field journal poster titled 'STILL NO COLOR? 7 BEGINNER MISTAKES'. Seven numbered illustrated panels, each with a small red X and a green fix arrow: 1 Too Fast, 2 Surface Sand Only, 3 One Spot Only, 4 No Classifier, 5 No Black Sand, 6 Quit After One Pan, 7 Fooled by Mica. Central cross-section showing loose surface gravel vs packed layer on bedrock where gold sits. Aged parchment with stamped headings.",
+        "weight": 1.0
+    },
+    {
+        "category": "Minerals",
+        "topic_key": "your_first_flake",
+        "title": "Your First Flake: How to Spot, Pick Up and Keep It",
+        "core_concept": "A real flake stays bright yellow in shade and sun, stays put when the pan is swirled while lighter specks float off, and bends instead of shattering when pressed. Lift it with a snuffer bottle, tweezers or a dry fingertip, drop it into a water-filled vial, and note where it came from: the spot that gave one flake is the spot to sample more carefully.",
+        "visual_blueprint": "Vintage macro field guide poster titled 'YOUR FIRST FLAKE'. Large close-up illustration of a pan tail showing black sand with one bright gold flake circled. Three test panels: Shade Test (stays yellow), Swirl Test (stays put), Pin Test (bends, does not break). Recovery panel: Snuffer Bottle, Tweezers, Dry Fingertip, then a water-filled vial with a cork. Notebook corner with 'Spot, Layer, Date'. Aged parchment.",
+        "weight": 1.0
+    },
+    {
+        "category": "Rules & Value",
+        "topic_key": "beginner_friendly_places",
+        "title": "Where Beginners Start: Panning Areas, Clubs and Pay Dirt",
+        "core_concept": "The easiest first places are those where panning is clearly allowed: designated recreational panning areas on some public lands, and prospecting club claims open to members. Bags of pay dirt let beginners practice on material known to hold gold. Always check the current rules of the land agency or claim owner before digging anywhere.",
+        "visual_blueprint": "Vintage travel-guide style poster titled 'WHERE BEGINNERS START'. Three illustrated signposts: 'Recreational Panning Area', 'Club Claim (Members)', 'Pay Dirt Practice Bag'. Each signpost leads to a small vignette: a public creek with a panning sign, a club gathering at a creek with claim markers, a kitchen table with a pay dirt bag and pan. Bottom banner: 'Check the Rules Before You Dig'. Aged parchment, map-like borders.",
+        "weight": 1.0
+    },
+    {
+        "category": "Strategy",
+        "topic_key": "prospecting_logbook",
+        "title": "Keep a Prospecting Log: Turn Every Trip Into a Clue",
+        "core_concept": "Every pan is data. Record the spot, the layer it came from, how much black sand showed, and how many colors you saw. Over several trips the notes reveal a pattern, such as one bend, one depth or one kind of bedrock that keeps producing, which is how prospectors trace a pay streak instead of guessing.",
+        "visual_blueprint": "Vintage field notebook poster titled 'KEEP A PROSPECTING LOG'. Open leather notebook illustration with a hand-written table: Trip, Spot, Layer, Black Sand, Colors. A small hand-drawn creek map beside it with dots growing denser along one inside bend, labeled 'Pay Streak Emerging'. Bottom panels: Pencil and Notebook, GPS Pin, Sample Vials Labeled by Spot, Colors-per-Pan Tally. Aged parchment.",
+        "weight": 1.0
     }
 ]
 
