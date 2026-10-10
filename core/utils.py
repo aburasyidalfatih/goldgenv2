@@ -24,12 +24,14 @@ def iso_utc(dt) -> Optional[str]:
 _SECRET_PARAM = re.compile(r"\b(access_token|input_token|client_secret|appsecret_proof|key)=[^&\s'\"<>)]+",
                            re.I)
 _FB_TOKEN = re.compile(r"\bEAA[A-Za-z0-9]{20,}")
+_THREADS_TOKEN = re.compile(r"\bTH[A-Za-z0-9]{30,}")
 
 
 def redact_secrets(text) -> str:
     """Masks tokens and keys in a message before it is stored, logged or mailed."""
     text = _SECRET_PARAM.sub(lambda m: f"{m.group(1)}=***", str(text))
-    return _FB_TOKEN.sub("EAA***", text)
+    text = _FB_TOKEN.sub("EAA***", text)
+    return _THREADS_TOKEN.sub("TH***", text)
 
 
 class RedactSecretsFilter(logging.Filter):

@@ -32,6 +32,7 @@ from core.ai_provider import ai_backend
 from core.comment_reply import process_page_comments
 from core.promo_comment import process_page_promos
 from core.instagram import process_page_instagram
+from core.threads import process_page_threads
 from core.gemini_client import generate_post_content
 from core.imagen_client import generate_poster_image
 from core.fb_client import publish_photo_to_page
@@ -356,6 +357,33 @@ def instagram_job():
                        f"Pesan: {res['message']}", cooldown_hours=12)
     except Exception as e:
         logger.error(f"[Scheduler] Error during Instagram job: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
+THREADS_INTERVAL_MINUTES = 5
+
+
+def threads_job():
+    """
+    Every few minutes: publishes each Threads-enabled page's newly published posts
+    to its Threads account as a thread, and renews the Threads token when due
+    (see core/threads.py).
+    """
+    db = SessionLocal()
+    try:
+        pages = (db.query(FacebookPage)
+                   .filter(FacebookPage.is_active.isnot(False), FacebookPage.threads_enabled.is_(True))
+                   .all())
+        for page in pages:
+            res = process_page_threads(db, page)
+            if res.get("message") and not res.get("published"):
+                notify(db, f"threads:{page.id}", f"Posting Threads '{page.name}' gagal",
+                       f"Postingan Fanspage '{page.name}' tidak bisa dipublikasikan ke Threads.\n\n"
+                       f"Pesan: {res['message']}", cooldown_hours=12)
+    except Exception as e:
+        logger.error(f"[Scheduler] Error during Threads job: {e}")
         db.rollback()
     finally:
         db.close()
@@ -714,6 +742,16 @@ def start_scheduler():
         instagram_job,
         IntervalTrigger(minutes=INSTAGRAM_INTERVAL_MINUTES, timezone=SCHEDULER_TZ),
         id='instagram_job',
+        replace_existing=True,
+        misfire_grace_time=300,
+        coalesce=True,
+        max_instances=1,
+    )
+    # Threads cross-posting (as a thread) and Threads token renewal.
+    scheduler.add_job(
+        threads_job,
+        IntervalTrigger(minutes=THREADS_INTERVAL_MINUTES, timezone=SCHEDULER_TZ),
+        id='threads_job',
         replace_existing=True,
         misfire_grace_time=300,
         coalesce=True,

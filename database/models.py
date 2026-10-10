@@ -59,6 +59,18 @@ class FacebookPage(Base):
     ig_username = Column(String(200), nullable=True)
     ig_last_error = Column(Text, nullable=True)
 
+    # Threads cross-posting: same poster, caption split into a thread (main post +
+    # replies) because Threads allows 500 characters. Threads has its own user
+    # token (not the Page token), long-lived for 60 days and refreshed by the app.
+    threads_enabled = Column(Boolean, default=False)
+    threads_enabled_at = Column(DateTime, nullable=True)   # only posts after this go to Threads
+    threads_access_token = Column(Text, nullable=True)
+    threads_user_id = Column(String(100), nullable=True)
+    threads_username = Column(String(200), nullable=True)
+    threads_token_expires = Column(DateTime, nullable=True)
+    threads_token_refreshed_at = Column(DateTime, nullable=True)
+    threads_last_error = Column(Text, nullable=True)
+
     # Focus-phase rotation over the page's top reach winners: which winner family
     # leads (a change restarts the rotation at #1) and which slot comes next.
     focus_leader_key = Column(Integer, nullable=True)
@@ -170,6 +182,18 @@ class Post(Base):
     # Short-lived public link Instagram downloads the poster from
     ig_media_token = Column(String(64), nullable=True, index=True)
     ig_media_expires = Column(DateTime, nullable=True)
+
+    # Threads copy: None (not yet) | 'publishing' | 'published' | 'incomplete'
+    # (main post live, some replies still to send) | 'failed' | 'uncertain'
+    threads_status = Column(String(20), nullable=True)
+    threads_media_id = Column(String(100), nullable=True)      # the main (poster) post
+    threads_permalink = Column(String(500), nullable=True)
+    threads_error = Column(Text, nullable=True)
+    threads_attempts = Column(Integer, default=0)
+    threads_parts_done = Column(Integer, default=0)            # parts of the thread already live
+    threads_last_id = Column(String(100), nullable=True)       # the next reply goes under this one
+    threads_media_token = Column(String(64), nullable=True, index=True)
+    threads_media_expires = Column(DateTime, nullable=True)
 
     topic = relationship("ContentTopic", back_populates="posts")
     page = relationship("FacebookPage", back_populates="posts")

@@ -88,6 +88,18 @@ Di tab **Fanspage**, nyalakan **Juga posting ke Instagram** pada halaman yang pu
 * Bila gagal, dicoba lagi sampai 3 kali dan dikirim email peringatan. Bila koneksi terputus saat menayangkan, tidak dicoba ulang supaya tidak tayang dua kali.
 * Link Instagram tampil di Studio, beranda, dan Riwayat.
 
+## 🧵 Posting ke Threads
+
+Di tab **Fanspage**, buka **Hubungkan akun Threads**, tempel Access Token Threads, klik **Hubungkan**, lalu nyalakan **Juga posting ke Threads** dan klik **Simpan Preferensi**.
+
+* **Poster sama, caption jadi utas**: Threads membatasi 500 karakter per postingan. Poster dikirim bersama awal caption, sisanya menyusul sebagai balasan berantai di bawahnya. Caption dipecah di batas paragraf, lalu baris, kalimat, dan kata, tidak pernah di tengah kata. Tidak ada generate ulang dan tidak ada biaya AI tambahan.
+* **Satu tag**: Threads hanya memakai satu tag per postingan. Hashtag pertama dari baris hashtag di akhir caption ditaruh di postingan utama, sisanya tidak ikut.
+* Seperti Instagram: dicek tiap 5 menit, hanya postingan yang tayang **setelah** fitur dinyalakan, poster diambil Threads lewat link acak yang kedaluwarsa sendiri (perlu domain HTTPS / `PUBLIC_BASE_URL`).
+* **Token Threads berbeda dari Page Access Token**. Buat Meta App dengan use case **Access the Threads API**, beri izin `threads_basic` dan `threads_content_publish`, tambahkan akun Threads sebagai *Threads Tester* (terima undangannya di Threads: Pengaturan → Akun → Izin situs web), lalu buat tokennya dari *User Token Generator* di dashboard aplikasi.
+* Token **long-lived berlaku 60 hari** dan **diperpanjang otomatis** tiap 7 hari. Bila yang ditempel token pendek (1 jam), isi `THREADS_APP_SECRET` (App Secret aplikasi Meta tersebut) agar aplikasi menukarnya menjadi token 60 hari saat disimpan.
+* Bila satu balasan gagal, utas dilanjutkan pada percobaan berikutnya di bawah bagian terakhir yang sudah tayang. Poster tidak pernah dikirim ulang. Maksimal 3 kali percobaan, dengan email peringatan. Bila koneksi terputus saat menayangkan, tidak dicoba ulang supaya tidak tayang dua kali.
+* Link Threads tampil di Studio, beranda, dan Riwayat.
+
 ## 🔗 Komentar Promosi Pertama
 
 Di tab **Fanspage**, tiap halaman bisa mengaktifkan **Komentar promosi pertama**. Isi alamat web (misalnya `https://firstflake.com/`), dan boleh juga deskripsi singkat isi webnya, lalu klik **Simpan Preferensi**.

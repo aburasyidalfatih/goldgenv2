@@ -51,6 +51,23 @@ ADDED_COLUMNS = [
     ("posts", "ig_attempts", "INTEGER DEFAULT 0"),
     ("posts", "ig_media_token", "VARCHAR(64)"),
     ("posts", "ig_media_expires", "DATETIME"),
+    ("facebook_pages", "threads_enabled", "BOOLEAN DEFAULT 0"),
+    ("facebook_pages", "threads_enabled_at", "DATETIME"),
+    ("facebook_pages", "threads_access_token", "TEXT"),
+    ("facebook_pages", "threads_user_id", "VARCHAR(100)"),
+    ("facebook_pages", "threads_username", "VARCHAR(200)"),
+    ("facebook_pages", "threads_token_expires", "DATETIME"),
+    ("facebook_pages", "threads_token_refreshed_at", "DATETIME"),
+    ("facebook_pages", "threads_last_error", "TEXT"),
+    ("posts", "threads_status", "VARCHAR(20)"),
+    ("posts", "threads_media_id", "VARCHAR(100)"),
+    ("posts", "threads_permalink", "VARCHAR(500)"),
+    ("posts", "threads_error", "TEXT"),
+    ("posts", "threads_attempts", "INTEGER DEFAULT 0"),
+    ("posts", "threads_parts_done", "INTEGER DEFAULT 0"),
+    ("posts", "threads_last_id", "VARCHAR(100)"),
+    ("posts", "threads_media_token", "VARCHAR(64)"),
+    ("posts", "threads_media_expires", "DATETIME"),
 ]
 
 

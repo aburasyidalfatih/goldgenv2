@@ -431,7 +431,7 @@ function autoPosterApp() {
                 const data = await res.json();
                 this.pages = (data.pages || []).map(p => {
                     const previous = this.pages.find(old => old.id === p.id);
-                    return previous?.dirty ? previous : {...p, newToken: previous?.newToken || ''};
+                    return previous?.dirty ? previous : {...p, newToken: previous?.newToken || '', newThreadsToken: previous?.newThreadsToken || ''};
                 });
                 delete this.dataErrors.pages;
                 // Keep the active selection valid after add/delete.
@@ -555,7 +555,7 @@ function autoPosterApp() {
             if (this.savingPageId) return;
             this.savingPageId = page.id;
             try {
-                const before = JSON.stringify([page.content_language, page.aspect_ratio, page.color_theme, page.auto_post_times, page.autopilot_enabled, page.is_active, page.promo_enabled, page.promo_url, page.promo_note, page.ig_enabled]);
+                const before = JSON.stringify([page.content_language, page.aspect_ratio, page.color_theme, page.auto_post_times, page.autopilot_enabled, page.is_active, page.promo_enabled, page.promo_url, page.promo_note, page.ig_enabled, page.threads_enabled]);
                 const res = await fetch(`/api/pages/${page.id}`, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
@@ -570,15 +570,17 @@ function autoPosterApp() {
                         promo_enabled: page.promo_enabled,
                         promo_url: page.promo_url,
                         promo_note: page.promo_note,
-                        ig_enabled: page.ig_enabled
+                        ig_enabled: page.ig_enabled,
+                        threads_enabled: page.threads_enabled
                     })
                 });
                 const data = await res.json();
                 if (data.success) {
-                    page.dirty = before !== JSON.stringify([page.content_language, page.aspect_ratio, page.color_theme, page.auto_post_times, page.autopilot_enabled, page.is_active, page.promo_enabled, page.promo_url, page.promo_note, page.ig_enabled]);
+                    page.dirty = before !== JSON.stringify([page.content_language, page.aspect_ratio, page.color_theme, page.auto_post_times, page.autopilot_enabled, page.is_active, page.promo_enabled, page.promo_url, page.promo_note, page.ig_enabled, page.threads_enabled]);
                     // Show the address as stored (https:// added) unless it was edited meanwhile.
                     if (data.page && !page.dirty) Object.assign(page, { promo_url: data.page.promo_url, promo_last_error: data.page.promo_last_error,
-                                                                         ig_username: data.page.ig_username, ig_last_error: data.page.ig_last_error });
+                                                                         ig_username: data.page.ig_username, ig_last_error: data.page.ig_last_error,
+                                                                         threads_username: data.page.threads_username, threads_last_error: data.page.threads_last_error });
                     await this.fetchScheduleStatus();
                     this.showToast(`Pengaturan '${page.name}' disimpan.`);
                 } else {
@@ -610,6 +612,35 @@ function autoPosterApp() {
                 }
             } catch (err) {
                 this.showToast('Gagal mengganti token.', 'error');
+            }
+        },
+
+        async saveThreadsToken(page) {
+            if (!page.newThreadsToken) {
+                this.showToast('Tempel token Threads terlebih dahulu.', 'error');
+                return;
+            }
+            try {
+                const res = await fetch(`/api/pages/${page.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ threads_access_token: page.newThreadsToken })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    page.newThreadsToken = '';
+                    Object.assign(page, {
+                        threads_has_token: data.page.threads_has_token,
+                        threads_username: data.page.threads_username,
+                        threads_token_expires: data.page.threads_token_expires,
+                        threads_last_error: data.page.threads_last_error
+                    });
+                    this.showToast(`Threads terhubung: @${data.page.threads_username}`);
+                } else {
+                    this.showToast(data.message, 'error');
+                }
+            } catch (err) {
+                this.showToast('Gagal menyimpan token Threads.', 'error');
             }
         },
 

@@ -16,6 +16,7 @@ from database.models import ContentTopic, FacebookPage, Post, PageTopicWeight, C
 from core.fb_client import test_facebook_credentials
 from core.promo_comment import normalize_url
 from core.instagram import link_instagram
+from core.threads import connect_threads
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,12 @@ def serialize_page(page: FacebookPage, db: Session | None = None) -> dict:
         "ig_enabled": bool(page.ig_enabled),
         "ig_username": page.ig_username or "",
         "ig_last_error": page.ig_last_error,
+        "threads_enabled": bool(page.threads_enabled),
+        "threads_has_token": bool(page.threads_access_token),
+        "threads_access_token": SECRET_MASK if page.threads_access_token else "",
+        "threads_username": page.threads_username or "",
+        "threads_token_expires": iso_utc(page.threads_token_expires),
+        "threads_last_error": page.threads_last_error,
     }
 
 
@@ -229,6 +236,23 @@ def update_page(db: Session, page_row_id: int, payload: dict) -> dict:
                 return {"success": False, "message": res.get("message")}
             page.ig_enabled_at = datetime.now(timezone.utc).replace(tzinfo=None)
         page.ig_enabled = enabled
+
+    # Threads cross-posting: a new token (not the mask placeholder) is checked
+    # against Threads before it is stored.
+    new_threads_token = (payload.get("threads_access_token") or "").strip()
+    if new_threads_token and new_threads_token != SECRET_MASK:
+        res = connect_threads(db, page, new_threads_token)
+        if not res.get("success"):
+            db.commit()
+            return {"success": False, "message": res.get("message")}
+    if payload.get("threads_enabled") is not None:
+        enabled = bool(payload["threads_enabled"])
+        if enabled and not page.threads_enabled:
+            if not (page.threads_access_token and page.threads_user_id):
+                return {"success": False, "message": "Tempel Access Token Threads sebelum menyalakan posting ke Threads."}
+            page.threads_enabled_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            page.threads_last_error = None
+        page.threads_enabled = enabled
 
     # A new token is only stored when it is not the mask placeholder.
     new_token = payload.get("access_token")

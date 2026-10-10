@@ -411,9 +411,18 @@
                                                     <i class="fa-brands fa-instagram"></i> Buka di Instagram
                                                 </a>
                                             </template>
+                                            <template x-if="currentPost.threads_permalink">
+                                                <a :href="currentPost.threads_permalink" target="_blank" rel="noopener"
+                                                   class="px-3 py-2 rounded-lg text-xs font-semibold border border-darkborder bg-slate-900 hover:bg-slate-800 text-slate-100 transition flex items-center gap-2">
+                                                    <i class="fa-solid fa-at"></i> Buka di Threads
+                                                </a>
+                                            </template>
                                         </div>
                                         <template x-if="currentPost.ig_error">
                                             <p class="w-full text-xs text-rose-300" x-text="`Instagram: ${currentPost.ig_error}`"></p>
+                                        </template>
+                                        <template x-if="currentPost.threads_error">
+                                            <p class="w-full text-xs text-rose-300" x-text="`Threads: ${currentPost.threads_error}`"></p>
                                         </template>
                                     </div>
                                 </template>
@@ -549,6 +558,11 @@
                             <template x-if="post.ig_permalink">
                                 <a :href="post.ig_permalink" target="_blank" rel="noopener">
                                     <i class="fa-brands fa-instagram"></i> Instagram
+                                </a>
+                            </template>
+                            <template x-if="post.threads_permalink">
+                                <a :href="post.threads_permalink" target="_blank" rel="noopener">
+                                    <i class="fa-solid fa-at"></i> Threads
                                 </a>
                             </template>
                         </div>
@@ -922,6 +936,12 @@
                                                 <i class="fa-brands fa-instagram"></i>
                                             </a>
                                         </template>
+                                        <template x-if="p.threads_permalink">
+                                            <a :href="p.threads_permalink" target="_blank" rel="noopener" title="Lihat di Threads" aria-label="Lihat di Threads"
+                                               class="inline-block px-2 py-1 rounded bg-slate-800 text-slate-200 hover:bg-slate-700 border border-darkborder transition">
+                                                <i class="fa-solid fa-at"></i>
+                                            </a>
+                                        </template>
                                         <template x-if="p.status !== 'published'">
                                             <button @click="askPublish(p)" title="Publish sekarang"
                                                     class="px-2 py-1 rounded bg-gold-500/20 text-gold-300 hover:bg-gold-500/30 border border-gold-500/30 transition">
@@ -981,6 +1001,10 @@
                                     <template x-if="p.ig_permalink">
                                         <a :href="p.ig_permalink" target="_blank" rel="noopener"
                                            class="px-2 py-1 rounded text-xs bg-slate-800 text-slate-200 border border-darkborder">Instagram</a>
+                                    </template>
+                                    <template x-if="p.threads_permalink">
+                                        <a :href="p.threads_permalink" target="_blank" rel="noopener"
+                                           class="px-2 py-1 rounded text-xs bg-slate-800 text-slate-200 border border-darkborder">Threads</a>
                                     </template>
                                     <template x-if="p.status !== 'published'">
                                         <button @click="askPublish(p)" class="px-2 py-1 rounded text-xs bg-gold-500/20 text-gold-300 border border-gold-500/30">
@@ -1389,6 +1413,49 @@
                                 <template x-if="p.ig_enabled && p.ig_last_error">
                                     <p class="text-xs text-rose-300" x-text="`Gagal terakhir: ${p.ig_last_error}`"></p>
                                 </template>
+                            </div>
+
+                            <!-- Threads cross-posting -->
+                            <div class="p-3 rounded-lg border border-darkborder bg-slate-900/60 space-y-2">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <p class="text-xs font-bold text-white flex items-center gap-2">
+                                            <i class="fa-solid fa-at text-gold-400"></i> Juga posting ke Threads
+                                        </p>
+                                        <p class="text-xs mt-0.5 text-slate-400">
+                                            Poster yang sama dikirim ke Threads sebagai utas: awal caption di postingan utama, sisanya sebagai balasan berantai (batas Threads 500 karakter per postingan).
+                                        </p>
+                                    </div>
+                                    <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                                        <input type="checkbox" class="sr-only peer" :aria-label="`Posting ke Threads untuk ${p.name}`"
+                                               :checked="p.threads_enabled"
+                                               @change="p.threads_enabled = $event.target.checked; p.dirty = true">
+                                        <div class="w-11 h-6 bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-gold-500/60 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-gold-500"></div>
+                                    </label>
+                                </div>
+                                <template x-if="p.threads_username">
+                                    <p class="text-xs text-emerald-300"
+                                       x-text="`Akun: @${p.threads_username}` + (p.threads_token_expires ? ` · token berlaku sampai ${formatDate(p.threads_token_expires)} (diperpanjang otomatis)` : '')"></p>
+                                </template>
+                                <template x-if="p.threads_enabled && p.threads_last_error">
+                                    <p class="text-xs text-rose-300" x-text="`Gagal terakhir: ${p.threads_last_error}`"></p>
+                                </template>
+                                <details class="text-xs" :open="!p.threads_has_token">
+                                    <summary class="cursor-pointer text-slate-400 hover:text-slate-200 transition"
+                                             x-text="p.threads_has_token ? 'Ganti Access Token Threads' : 'Hubungkan akun Threads'"></summary>
+                                    <p class="text-slate-400 mt-2">
+                                        Token Threads berbeda dari Page Access Token: buat dari Meta App dengan use case "Access the Threads API" (izin threads_basic dan threads_content_publish).
+                                    </p>
+                                    <div class="flex gap-2 mt-2">
+                                        <input type="password" x-model="p.newThreadsToken" placeholder="Tempel token Threads (TH...)"
+                                               :aria-label="`Access Token Threads untuk ${p.name}`"
+                                               class="flex-1 min-w-0 bg-slate-900 border border-darkborder rounded-lg px-3 py-2 font-mono text-slate-100 focus:outline-none focus:ring-2 focus:ring-gold-500/60">
+                                        <button @click="saveThreadsToken(p)"
+                                                class="shrink-0 px-3 py-2 rounded-lg font-semibold border border-darkborder bg-slate-900 hover:bg-slate-800 text-slate-100 transition">
+                                            Hubungkan
+                                        </button>
+                                    </div>
+                                </details>
                             </div>
 
                             <!-- First-comment promotion -->
