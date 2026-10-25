@@ -363,8 +363,12 @@ function autoPosterApp() {
             preview: '',
             confirmLabel: 'Lanjutkan',
             tone: 'primary',
+            requireText: '',
+            typed: '',
             action: null
         },
+        // Temporary "delete all Facebook posts" runs, per page row id.
+        pageCleanup: {},
 
         // ---------- lifecycle ----------
         async initApp() {
@@ -644,6 +648,76 @@ function autoPosterApp() {
             }
         },
 
+        // ---------- temporary: delete all of a page's Facebook posts ----------
+        async askDeleteAllFbPosts(page) {
+            this.pageCleanup = { ...this.pageCleanup, [page.id]: { running: false, counting: true } };
+            let data;
+            try {
+                data = await (await fetch(`/api/pages/${page.id}/fb-posts/count`)).json();
+            } catch (err) {
+                data = { success: false, message: 'Gagal menghubungi server.' };
+            }
+            const { [page.id]: _, ...rest } = this.pageCleanup;
+            this.pageCleanup = rest;
+            if (!data.success) {
+                this.showToast(data.message, 'error');
+                return;
+            }
+            if (!data.count) {
+                this.showToast(`Tidak ada postingan di '${page.name}'.`);
+                return;
+            }
+            this.askConfirm({
+                title: 'Hapus semua postingan Facebook?',
+                message: `${data.count} postingan milik "${page.name}" akan dihapus PERMANEN dari Facebook ` +
+                         '(yang dibuat aplikasi maupun manual) dan tidak bisa dikembalikan. Salinan di Instagram/Threads ' +
+                         'dan riwayat di aplikasi tidak ikut terhapus. Ketik nama Fanspage untuk melanjutkan.',
+                confirmLabel: 'Hapus Semua',
+                tone: 'danger',
+                requireText: page.name,
+                action: (typed) => this.startDeleteAllFbPosts(page, typed)
+            });
+        },
+
+        async startDeleteAllFbPosts(page, typed) {
+            try {
+                const res = await fetch(`/api/pages/${page.id}/fb-posts/delete-all`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ confirm_name: typed })
+                });
+                const data = await res.json();
+                this.showToast(data.message, data.success ? 'success' : 'error');
+                if (data.success) this.pollFbPostCleanup(page.id);
+            } catch (err) {
+                this.showToast('Gagal memulai penghapusan.', 'error');
+            }
+        },
+
+        async pollFbPostCleanup(pageId) {
+            try {
+                const data = await (await fetch(`/api/pages/${pageId}/fb-posts/delete-status`)).json();
+                this.pageCleanup = { ...this.pageCleanup, [pageId]: data };
+                if (data.running) setTimeout(() => this.pollFbPostCleanup(pageId), 3000);
+            } catch (err) {
+                setTimeout(() => this.pollFbPostCleanup(pageId), 5000);
+            }
+        },
+
+        fbPostCleanupBusy(pageId) {
+            const c = this.pageCleanup[pageId];
+            return Boolean(c && (c.running || c.counting));
+        },
+
+        fbPostCleanupText(c) {
+            if (!c) return '';
+            if (c.counting) return 'Menghitung postingan di Facebook…';
+            if (c.running) return c.total == null ? 'Mengambil daftar postingan…'
+                : `Menghapus postingan… ${c.deleted + c.failed}/${c.total} (gagal ${c.failed})`;
+            const done = c.total == null ? '' : `Selesai: ${c.deleted} dari ${c.total} postingan terhapus, ${c.failed} gagal.`;
+            return [done, c.message].filter(Boolean).join(' ');
+        },
+
         async reverifyPage(page) {
             this.verifyingPageId = page.id;
             try {
@@ -821,17 +895,23 @@ function autoPosterApp() {
         },
 
         // ---------- confirmation flow ----------
-        askConfirm({ title, message, preview = '', confirmLabel = 'Lanjutkan', tone = 'primary', action }) {
-            this.confirmDialog = { show: true, title, message, preview, confirmLabel, tone, action };
+        askConfirm({ title, message, preview = '', confirmLabel = 'Lanjutkan', tone = 'primary', requireText = '', action }) {
+            this.confirmDialog = { show: true, title, message, preview, confirmLabel, tone, requireText, typed: '', action };
+        },
+
+        confirmTextOk() {
+            const { requireText, typed } = this.confirmDialog;
+            return !requireText || (typed || '').trim() === requireText.trim();
         },
 
         runConfirmAction() {
-            const action = this.confirmDialog.action;
+            const { action, typed } = this.confirmDialog;
+            if (!this.confirmTextOk()) return;
             // Replace the whole object (guaranteed reactive) and let Alpine paint the
             // close before the action starts, so the dialog can't linger on screen.
             this.confirmDialog = { ...this.confirmDialog, show: false, action: null };
             if (typeof action === 'function') {
-                this.$nextTick(() => action());
+                this.$nextTick(() => action(typed));
             }
         },
 

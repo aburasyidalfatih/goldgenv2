@@ -1518,7 +1518,18 @@
                                         <i class="fa-solid fa-arrow-up-right-from-square"></i> Buka
                                     </a>
                                 </template>
+                                <!-- Temporary tool: delete all of this page's Facebook posts -->
+                                <button @click="askDeleteAllFbPosts(p)" :disabled="fbPostCleanupBusy(p.id)"
+                                        class="px-3 py-2 rounded-lg text-xs font-semibold border border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 transition flex items-center gap-1.5 disabled:opacity-50">
+                                    <i :class="fbPostCleanupBusy(p.id) ? 'fa-solid fa-circle-notch fa-spin' : 'fa-regular fa-trash-can'"></i>
+                                    Hapus Semua Postingan
+                                </button>
                             </div>
+                            <template x-if="pageCleanup[p.id]">
+                                <p role="status" class="text-xs"
+                                   :class="fbPostCleanupBusy(p.id) ? 'text-amber-300' : (pageCleanup[p.id].failed || pageCleanup[p.id].message ? 'text-rose-300' : 'text-emerald-300')"
+                                   x-text="fbPostCleanupText(pageCleanup[p.id])"></p>
+                            </template>
 
                             <!-- Token replacement -->
                             <details class="text-xs">
@@ -2050,13 +2061,19 @@
                 <p class="text-xs text-slate-300 bg-slate-950 border border-darkborder rounded-lg p-3 max-h-28 overflow-y-auto whitespace-pre-wrap"
                    x-text="confirmDialog.preview"></p>
             </template>
+            <template x-if="confirmDialog.requireText">
+                <input type="text" x-model="confirmDialog.typed" :placeholder="confirmDialog.requireText"
+                       aria-label="Ketik nama untuk konfirmasi" autocomplete="off"
+                       class="w-full bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500/60">
+            </template>
             <div class="flex gap-2.5 pt-1">
                 <button @click="confirmDialog.show = false"
                         class="flex-1 py-2.5 rounded-lg text-sm font-semibold border border-darkborder bg-slate-900 hover:bg-slate-800 text-slate-200 transition">
                     Batal
                 </button>
                 <button @click="runConfirmAction()"
-                        class="flex-1 py-2.5 rounded-lg text-sm font-bold text-white transition"
+                        :disabled="!confirmTextOk()"
+                        class="flex-1 py-2.5 rounded-lg text-sm font-bold text-white transition disabled:opacity-40 disabled:cursor-not-allowed"
                         :class="confirmDialog.tone === 'danger' ? 'bg-rose-600 hover:bg-rose-500' : 'bg-blue-600 hover:bg-blue-500'"
                         x-text="confirmDialog.confirmLabel"></button>
             </div>

@@ -59,6 +59,7 @@ from core import comment_reply
 from core.promo_comment import recover_interrupted_promos
 from core import instagram
 from core import threads
+from core import page_cleanup
 from core import auth
 from core.poster_style import THEMES
 from core import notifier
@@ -547,6 +548,33 @@ def update_page_endpoint(page_row_id: int, payload: Dict[str, Any], db: Session 
 @app.post("/api/pages/{page_row_id}/verify")
 def reverify_page_endpoint(page_row_id: int, db: Session = Depends(get_db)):
     return reverify_page(db, page_row_id)
+
+# Temporary tool: delete all of a Fanspage's own posts on Facebook (see core/page_cleanup.py).
+@app.get("/api/pages/{page_row_id}/fb-posts/count")
+def count_fb_posts_endpoint(page_row_id: int, db: Session = Depends(get_db)):
+    page = get_page(db, page_row_id)
+    if not page or not page.access_token:
+        return {"success": False, "message": "Fanspage tidak ditemukan atau belum punya Access Token."}
+    res = page_cleanup.list_page_posts(page.page_id, page.access_token)
+    if not res.get("success"):
+        return res
+    return {"success": True, "count": len(res["posts"])}
+
+class DeleteFbPostsRequest(BaseModel):
+    confirm_name: str
+
+@app.post("/api/pages/{page_row_id}/fb-posts/delete-all")
+def delete_all_fb_posts_endpoint(page_row_id: int, req: DeleteFbPostsRequest, db: Session = Depends(get_db)):
+    page = get_page(db, page_row_id)
+    if not page or not page.access_token:
+        return {"success": False, "message": "Fanspage tidak ditemukan atau belum punya Access Token."}
+    if req.confirm_name.strip() != (page.name or "").strip():
+        return {"success": False, "message": "Nama Fanspage yang diketik tidak cocok. Tidak ada yang dihapus."}
+    return page_cleanup.start(page.id, page.page_id, page.access_token, page.name)
+
+@app.get("/api/pages/{page_row_id}/fb-posts/delete-status")
+def delete_fb_posts_status_endpoint(page_row_id: int):
+    return page_cleanup.status(page_row_id)
 
 @app.delete("/api/pages/{page_row_id}")
 def delete_page_endpoint(page_row_id: int, db: Session = Depends(get_db)):
