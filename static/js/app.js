@@ -435,7 +435,8 @@ function autoPosterApp() {
                 const data = await res.json();
                 this.pages = (data.pages || []).map(p => {
                     const previous = this.pages.find(old => old.id === p.id);
-                    return previous?.dirty ? previous : {...p, newToken: previous?.newToken || '', newThreadsToken: previous?.newThreadsToken || ''};
+                    return previous?.dirty ? previous : {...p, newToken: previous?.newToken || '', newThreadsToken: previous?.newThreadsToken || '',
+                                                         showNewToken: false, revealPassword: '', revealedToken: '', revealBusy: false};
                 });
                 delete this.dataErrors.pages;
                 // Keep the active selection valid after add/delete.
@@ -716,6 +717,50 @@ function autoPosterApp() {
                 : `Menghapus postingan… ${c.deleted + c.failed}/${c.total} (gagal ${c.failed})`;
             const done = c.total == null ? '' : `Selesai: ${c.deleted} dari ${c.total} postingan terhapus, ${c.failed} gagal.`;
             return [done, c.message].filter(Boolean).join(' ');
+        },
+
+        // The stored token is only shown after the login password is entered again,
+        // and hidden again after a minute.
+        async revealToken(page) {
+            if (!page.revealPassword) {
+                this.showToast('Masukkan password login Anda.', 'error');
+                return;
+            }
+            page.revealBusy = true;
+            try {
+                const res = await fetch(`/api/pages/${page.id}/token/reveal`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: page.revealPassword })
+                });
+                const data = await res.json();
+                page.revealPassword = '';
+                if (!data.success) {
+                    this.showToast(data.message, 'error');
+                    return;
+                }
+                page.revealedToken = data.token;
+                clearTimeout(page.revealTimer);
+                page.revealTimer = setTimeout(() => { page.revealedToken = ''; }, 60000);
+            } catch (err) {
+                this.showToast('Gagal mengambil token.', 'error');
+            } finally {
+                page.revealBusy = false;
+            }
+        },
+
+        hideToken(page) {
+            clearTimeout(page.revealTimer);
+            page.revealedToken = '';
+        },
+
+        async copyToken(page) {
+            try {
+                await navigator.clipboard.writeText(page.revealedToken);
+                this.showToast('Token disalin.');
+            } catch (err) {
+                this.showToast('Tidak bisa menyalin otomatis. Pilih teksnya lalu salin manual.', 'error');
+            }
         },
 
         async reverifyPage(page) {

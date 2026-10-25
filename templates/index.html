@@ -1533,10 +1533,51 @@
 
                             <!-- Token replacement -->
                             <details class="text-xs">
-                                <summary class="cursor-pointer text-slate-400 hover:text-slate-200 transition">Ganti Access Token</summary>
+                                <summary class="cursor-pointer text-slate-400 hover:text-slate-200 transition">Lihat / Ganti Access Token</summary>
+                                <!-- View the stored token (login password required) -->
+                                <div class="mt-2 space-y-2">
+                                    <template x-if="!p.revealedToken">
+                                        <div class="flex gap-2">
+                                            <input type="password" x-model="p.revealPassword" placeholder="Password login untuk melihat token"
+                                                   :aria-label="`Password login untuk melihat token ${p.name}`" autocomplete="current-password"
+                                                   @keydown.enter.prevent="revealToken(p)"
+                                                   class="flex-1 min-w-0 bg-slate-900 border border-darkborder rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-gold-500/60">
+                                            <button @click="revealToken(p)" :disabled="p.revealBusy"
+                                                    class="shrink-0 px-3 py-2 rounded-lg font-semibold border border-darkborder bg-slate-900 hover:bg-slate-800 text-slate-100 transition flex items-center gap-1.5 disabled:opacity-50">
+                                                <i :class="p.revealBusy ? 'fa-solid fa-circle-notch fa-spin' : 'fa-regular fa-eye'"></i> Lihat Token
+                                            </button>
+                                        </div>
+                                    </template>
+                                    <template x-if="p.revealedToken">
+                                        <div class="space-y-1.5">
+                                            <textarea readonly rows="3" :value="p.revealedToken" @focus="$event.target.select()"
+                                                      :aria-label="`Access Token ${p.name}`"
+                                                      class="w-full bg-slate-950 border border-darkborder rounded-lg px-3 py-2 font-mono text-slate-100 break-all resize-none focus:outline-none focus:ring-2 focus:ring-gold-500/60"></textarea>
+                                            <div class="flex items-center gap-2">
+                                                <button @click="copyToken(p)"
+                                                        class="px-3 py-1.5 rounded-lg font-semibold border border-darkborder bg-slate-900 hover:bg-slate-800 text-slate-100 transition flex items-center gap-1.5">
+                                                    <i class="fa-regular fa-copy"></i> Salin
+                                                </button>
+                                                <button @click="hideToken(p)"
+                                                        class="px-3 py-1.5 rounded-lg font-semibold border border-darkborder bg-slate-900 hover:bg-slate-800 text-slate-100 transition flex items-center gap-1.5">
+                                                    <i class="fa-regular fa-eye-slash"></i> Sembunyikan
+                                                </button>
+                                                <span class="text-slate-400">Disembunyikan otomatis setelah 1 menit. Jangan bagikan token ini.</span>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
                                 <div class="flex gap-2 mt-2">
-                                    <input type="password" x-model="p.newToken" placeholder="Tempel token baru (EAA...)"
-                                           class="flex-1 min-w-0 bg-slate-900 border border-darkborder rounded-lg px-3 py-2 font-mono text-slate-100 focus:outline-none focus:ring-2 focus:ring-gold-500/60">
+                                    <div class="relative flex-1 min-w-0">
+                                        <input :type="p.showNewToken ? 'text' : 'password'" x-model="p.newToken" placeholder="Tempel token baru (EAA...)"
+                                               aria-label="Access Token baru"
+                                               class="w-full bg-slate-900 border border-darkborder rounded-lg pl-3 pr-9 py-2 font-mono text-slate-100 focus:outline-none focus:ring-2 focus:ring-gold-500/60">
+                                        <button type="button" @click="p.showNewToken = !p.showNewToken"
+                                                :aria-label="p.showNewToken ? 'Sembunyikan token baru' : 'Tampilkan token baru'"
+                                                class="absolute inset-y-0 right-0 px-3 text-slate-400 hover:text-slate-200">
+                                            <i :class="p.showNewToken ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye'"></i>
+                                        </button>
+                                    </div>
                                     <button @click="replaceToken(p)"
                                             class="shrink-0 px-3 py-2 rounded-lg font-semibold border border-darkborder bg-slate-900 hover:bg-slate-800 text-slate-100 transition">
                                         Simpan Token

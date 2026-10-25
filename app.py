@@ -549,6 +549,36 @@ def update_page_endpoint(page_row_id: int, payload: Dict[str, Any], db: Session 
 def reverify_page_endpoint(page_row_id: int, db: Session = Depends(get_db)):
     return reverify_page(db, page_row_id)
 
+class RevealTokenRequest(BaseModel):
+    password: str
+
+@app.post("/api/pages/{page_row_id}/token/reveal")
+def reveal_page_token_endpoint(page_row_id: int, req: RevealTokenRequest, request: Request,
+                               db: Session = Depends(get_db)):
+    """
+    The stored Page Access Token in cleartext, only after the login password is
+    entered again (a session left open elsewhere is not enough). Failed attempts
+    count towards the login lockout.
+    """
+    email = request.state.user_email
+    ip = request.client.host if request.client else "?"
+    locked = auth.login_throttle.seconds_locked(ip, email)
+    if locked:
+        minutes = (locked + 59) // 60
+        return JSONResponse({"success": False,
+                             "message": f"Terlalu banyak percobaan gagal. Coba lagi dalam {minutes} menit."},
+                            status_code=429)
+    if not auth.authenticate(db, email, req.password):
+        auth.login_throttle.record_failure(ip, email)
+        return {"success": False, "message": "Password login salah."}
+    auth.login_throttle.reset(ip, email)
+    page = get_page(db, page_row_id)
+    if not page or not page.access_token:
+        return {"success": False, "message": "Fanspage tidak ditemukan atau belum punya Access Token."}
+    logger.info(f"Access Token Fanspage '{page.name}' ditampilkan untuk {email} dari {ip}.")
+    return JSONResponse({"success": True, "token": page.access_token},
+                        headers={"Cache-Control": "no-store"})
+
 # Temporary tool: delete all of a Fanspage's own posts on Facebook (see core/page_cleanup.py).
 @app.get("/api/pages/{page_row_id}/fb-posts/count")
 def count_fb_posts_endpoint(page_row_id: int, db: Session = Depends(get_db)):
