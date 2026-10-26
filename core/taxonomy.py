@@ -336,6 +336,58 @@ SEED_TOPICS = [
         "core_concept": "Every pan is data. Record the spot, the layer it came from, how much black sand showed, and how many colors you saw. Over several trips the notes reveal a pattern, such as one bend, one depth or one kind of bedrock that keeps producing, which is how prospectors trace a pay streak instead of guessing.",
         "visual_blueprint": "Vintage field notebook poster titled 'KEEP A PROSPECTING LOG'. Open leather notebook illustration with a hand-written table: Trip, Spot, Layer, Black Sand, Colors. A small hand-drawn creek map beside it with dots growing denser along one inside bend, labeled 'Pay Streak Emerging'. Bottom panels: Pencil and Notebook, GPS Pin, Sample Vials Labeled by Spot, Colors-per-Pan Tally. Aged parchment.",
         "weight": 1.0
+    },
+    # ------------------------------------------------------------------
+    # Gold-bearing rocks (October 2026): rock and mineral topics drew most of the
+    # audience's comments, many of them people asking about a rock they found.
+    # ------------------------------------------------------------------
+    {
+        "category": "Geology",
+        "topic_key": "mariposite_mother_lode",
+        "title": "Mariposite: The Green Rock That Marks California's Mother Lode",
+        "core_concept": "Along California's Mother Lode belt, gold-bearing quartz veins often run through a distinctive altered rock: pale carbonate (ankerite) speckled with bright green mariposite, a chromium-bearing mica named after Mariposa County. It formed where hot fluids altered serpentine and similar rock along major faults, the same fluids that carried the gold. Green mariposite and rusty-weathering ankerite mark the right fault zone rather than gold itself, so follow them to the quartz veins and sample those.",
+        "visual_blueprint": "Vintage geological field guide poster titled 'MARIPOSITE: THE MOTHER LODE ROCK'. Hillside cross-section along a major fault zone: dark serpentine on one side, a band of pale ankerite rock speckled bright green with mariposite in the middle, and white quartz veins with gold specks cutting through it. Inset map of the Mother Lode belt in the Sierra Nevada foothills with Mariposa County marked. Bottom panels: Green Mariposite, Rusty Ankerite Outcrop, Serpentine, Gold-Bearing Quartz Vein. Aged parchment with hand-drawn hatching.",
+        "weight": 1.0
+    },
+    {
+        "category": "Geology",
+        "topic_key": "carlin_invisible_gold",
+        "title": "Carlin-Type Gold: Nevada's Invisible Gold in Dirty Limestone",
+        "core_concept": "Some of the richest gold rock in America shows no gold at all. In Nevada's Carlin Trend, gold is spread through dark, silty limestone and dolomite as microscopic particles, much of it locked in tiny grains of arsenic-rich pyrite. The clues are subtle: rock bleached pale or replaced by a dense silica rock called jasperoid, iron and arsenic staining, and nearby faults. A pan shows nothing, so this gold is found with rock sampling and assays, and mined on an enormous scale.",
+        "visual_blueprint": "Vintage geological field guide poster titled 'INVISIBLE GOLD: THE CARLIN TREND'. Cross-section of layered dark silty limestone cut by a fault, with hot fluids (red arrows) rising and a zone of bleached, silicified rock around the fault. Magnified inset 'UNDER THE MICROSCOPE' showing a pyrite grain with a thin gold-rich rim, labeled 'Gold Too Small to See'. Map inset of northern Nevada with the Carlin Trend drawn as a line. Bottom panels: Silty Limestone, Jasperoid, Bleached Rock, Assay Results. Aged parchment.",
+        "weight": 1.0
+    },
+    {
+        "category": "Geology",
+        "topic_key": "volcanic_banded_quartz",
+        "title": "Volcanic Gold: Banded Quartz and Bladed Textures in Old Volcanoes",
+        "core_concept": "Some of the West's famous bonanza veins, such as Nevada's Comstock Lode, formed in volcanic rock where hot water rose close to the surface and boiled. Boiling is what made the gold drop out, and it left telltale textures in the vein: quartz and chalcedony in fine, wavy bands like agate, and thin blades where quartz replaced platy calcite crystals. Bleached, clay-altered volcanic rock around the vein is another clue. These textures mark the boiling zone, the part of a vein most likely to carry gold.",
+        "visual_blueprint": "Vintage field guide poster titled 'VOLCANIC GOLD: READING BOILING-ZONE VEINS'. Cutaway of an ancient volcano with hot water rising through fractures and a 'BOILING ZONE' band near the surface marked with bubbles and gold specks in the vein. Two large specimen drawings: 'BANDED QUARTZ & CHALCEDONY' with agate-like wavy bands, and 'BLADED TEXTURE' with thin quartz blades. Bottom panels: Banded Vein, Bladed Quartz, Bleached Clay-Altered Rock, Old Mine Portal. Aged parchment.",
+        "weight": 1.0
+    },
+    {
+        "category": "Geology",
+        "topic_key": "banded_iron_formation_gold",
+        "title": "Banded Iron Formation: The Striped Rock Behind the Homestake Mine",
+        "core_concept": "Banded iron formation is an ancient sedimentary rock built of alternating iron-rich and silica-rich layers, often striped dark and red or gray. Where these layers were folded and later invaded by gold-bearing fluids, the iron reacted with the fluid and dropped gold along with sulfides. South Dakota's Homestake Mine, one of the largest gold producers in U.S. history, worked gold in a folded iron formation. Look for tightly folded iron-rich layers cut by quartz veins and rusty sulfide zones.",
+        "visual_blueprint": "Vintage geological field guide poster titled 'BANDED IRON FORMATION'. Large specimen drawing of a folded striped rock with alternating dark iron bands and red-gray silica bands, with quartz veins and rusty sulfide pockets concentrated in the fold hinge labeled 'GOLD TRAP: FOLD HINGE'. Side cross-section of a mine headframe with workings following the folded layer down. Bottom panels: Striped Iron Rock, Tight Fold, Sulfide Pocket, Quartz Vein Crossing the Bands. Aged parchment.",
+        "weight": 1.0
+    },
+    {
+        "category": "Minerals",
+        "topic_key": "arsenopyrite_gold_sulfide",
+        "title": "Arsenopyrite: The Silver Sulfide That Often Carries Gold",
+        "core_concept": "Not every metallic mineral near gold is pyrite. Arsenopyrite is silvery white to steel gray, forms wedge- or diamond-shaped crystals, and gives off a garlic smell when struck hard, a sign of its arsenic. In many gold districts it carries gold locked inside its crystals, so arsenopyrite-rich quartz is worth an assay. Because it contains arsenic, never roast or burn samples, and wash your hands after handling them.",
+        "visual_blueprint": "Vintage mineral specimen poster titled 'ARSENOPYRITE: THE SILVER SULFIDE'. Three specimen drawings side by side: 'PYRITE: Brassy Cubes', 'ARSENOPYRITE: Silver Wedge-Shaped Crystals', 'GOLD: Soft Yellow'. Callout of a hammer striking a specimen with a small garlic icon labeled 'Garlic Smell = Arsenic'. Magnified inset of a crystal with gold specks inside. Warning stamp: 'Never Roast Samples'. Bottom panels: Quartz With Arsenopyrite, Black Streak, Hammer Test, Assay Bag. Aged parchment.",
+        "weight": 1.0
+    },
+    {
+        "category": "Minerals",
+        "topic_key": "test_a_promising_rock",
+        "title": "Found a Promising Rock? Crush It, Pan It, Then Assay It",
+        "core_concept": "A rock that looks promising needs testing, not guessing. First check the clues: rusty staining, honeycomb holes where sulfides weathered out, quartz with metallic crystals, and unusual weight from heavy sulfides. Then crush a small piece to powder, pan it like gravel, and look for a gold tail behind the black sand, which shows free gold. Most gold in rock is too fine to see, so a blank pan is not the final word: a fire assay from a lab measures it exactly.",
+        "visual_blueprint": "Vintage step-by-step field guide poster titled 'FOUND A PROMISING ROCK?'. Numbered illustrated sequence: 1 Look for Clues (rusty, vuggy quartz specimen under a magnifier), 2 Crush to Powder (mortar and pestle), 3 Pan the Powder (gold pan with a thin gold tail behind black sand), 4 Send for Fire Assay (lab crucible and sample bag). Side box 'A BLANK PAN IS NOT THE FINAL WORD: Most gold in rock is invisible'. Bottom panels: Rusty Quartz, Boxwork Holes, Gold Tail, Assay Certificate. Aged parchment.",
+        "weight": 1.0
     }
 ]
 

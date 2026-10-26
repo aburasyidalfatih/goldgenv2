@@ -68,3 +68,42 @@ def test_topik_pemula_ikut_tahap_uji(client, make_page, make_post, topics, db):
 
     assert phase["phase"] == "test"
     assert {t.topic_key for t in phase["untested"]} == BEGINNER_KEYS
+
+
+ROCK_KEYS = {"mariposite_mother_lode", "carlin_invisible_gold", "volcanic_banded_quartz",
+             "banded_iron_formation_gold", "arsenopyrite_gold_sulfide", "test_a_promising_rock"}
+
+
+def test_kunci_topik_dasar_unik():
+    keys = [t["topic_key"] for t in SEED_TOPICS]
+    assert len(keys) == len(set(keys))
+
+
+def test_topik_batuan_masuk_ke_database_yang_sudah_berjalan(client, db):
+    """Database produksi sudah punya 40 topik: 6 topik batuan pembawa emas ditambahkan saat start."""
+    db.query(ContentTopic).filter(ContentTopic.topic_key.in_(ROCK_KEYS)).delete(synchronize_session=False)
+    db.commit()
+
+    added = seed_base_curriculum(db)
+
+    assert set(added) == {t["title"] for t in SEED_TOPICS if t["topic_key"] in ROCK_KEYS}
+    rows = db.query(ContentTopic).filter(ContentTopic.topic_key.in_(ROCK_KEYS)).all()
+    assert len(rows) == 6
+    assert all(r.source == "seed" and r.is_active and r.base_topic_id == r.id for r in rows)
+    assert {r.category for r in rows} == {"Geology", "Minerals"}, "kategori yang sudah ada, tanpa label baru"
+
+
+def test_topik_batuan_diuji_sekali_lalu_kembali_fokus(client, make_page, make_post, topics, db):
+    from core.feedback_loop import learning_phase
+    page = make_page("111")
+    for t in db.query(ContentTopic).filter(ContentTopic.source == "seed",
+                                           ContentTopic.topic_key.notin_(ROCK_KEYS)):
+        make_post(page["id"], t, days_ago=10)
+
+    phase = learning_phase(db, page["id"])
+    assert phase["phase"] == "test"
+    assert {t.topic_key for t in phase["untested"]} == ROCK_KEYS
+
+    for t in phase["untested"]:
+        make_post(page["id"], t, days_ago=3)
+    assert learning_phase(db, page["id"])["phase"] == "focus"
