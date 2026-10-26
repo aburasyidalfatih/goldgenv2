@@ -5,7 +5,7 @@ from sqlalchemy import or_
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 from database.models import ContentTopic, FacebookPage, Post, PostMetric, PageTopicWeight
-from core.fb_client import fetch_post_metrics
+from core.fb_client import fetch_post_metrics, page_posts_readable, PostNotFound
 from core.taxonomy import SEED_TOPICS
 
 logger = logging.getLogger(__name__)
@@ -198,7 +198,8 @@ def learning_phase(db: Session, page_id: int) -> dict:
     awaiting = {
         tid for (tid,) in db.query(Post.topic_id)
         .filter(Post.page_id == page_id, Post.status == "published",
-                Post.published_at.isnot(None), Post.published_at > give_up)
+                Post.published_at.isnot(None), Post.published_at > give_up,
+                Post.fb_removed_at.is_(None))   # deleted on Facebook: nothing more will come
         .distinct()
     }
     untested = [t for t in bases if t.id not in produced]
@@ -292,13 +293,17 @@ def update_all_post_metrics(
     never been measured — are refreshed. Without that bound the nightly job would
     re-fetch every post ever published, growing forever and risking rate limits.
     Pass `max_age_days=None` to force a full refresh.
+
+    A post Facebook no longer has (deleted there) is marked `fb_removed_at` and
+    skipped from then on; its last metrics stay as history.
     """
     if not page_id or not access_token:
         return []
 
     query = db.query(Post).filter(
         Post.status == "published",
-        Post.fb_post_id.isnot(None)
+        Post.fb_post_id.isnot(None),
+        Post.fb_removed_at.is_(None),
     )
     if page_row_id is not None:
         query = query.filter(Post.page_id == page_row_id)
@@ -314,6 +319,8 @@ def update_all_post_metrics(
     published_posts = query.all()
 
     updated = []
+    removed = 0
+    page_readable = None   # asked once, at the first "does not exist"
     for post in published_posts:
         try:
             metric = store_post_metrics(db, post, fetch_post_metrics(page_id, access_token, post.fb_post_id))
@@ -323,9 +330,21 @@ def update_all_post_metrics(
                 "score": metric.calculated_score,
                 "reach": metric.reach,
             })
+        except PostNotFound as e:
+            if page_readable is None:
+                page_readable = page_posts_readable(page_id, access_token)
+            if page_readable:
+                post.fb_removed_at = datetime.now(timezone.utc)
+                removed += 1
+            else:
+                # Same answer as a missing permission: keep trying on later syncs.
+                logger.error(f"Error updating metrics for post {post.id}: {e}")
         except Exception as e:
             logger.error(f"Error updating metrics for post {post.id}: {e}")
 
+    if removed:
+        logger.info(f"[Metrics] {removed} post(s) of page {page_id} were deleted on Facebook; "
+                    f"they are no longer synced.")
     db.commit()
     return updated
 

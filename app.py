@@ -39,7 +39,7 @@ from core.gemini_client import test_gemini_key, generate_post_content, template_
 from core.openai_client import test_openai_key
 from core.ai_provider import ai_backend, PROVIDER_LABELS
 from core.imagen_client import generate_poster_image
-from core.fb_client import publish_photo_to_page, fetch_post_metrics, MetricsUnavailable
+from core.fb_client import publish_photo_to_page, fetch_post_metrics, MetricsUnavailable, PostNotFound
 from core.feedback_loop import (
     get_next_recommended_topic,
     update_all_post_metrics,
@@ -1217,9 +1217,14 @@ def refresh_post_metrics_endpoint(post_id: int, db: Session = Depends(get_db)):
 
     try:
         m_data = fetch_post_metrics(page.page_id, page.access_token, post.fb_post_id)
+    except PostNotFound:
+        return {"success": False,
+                "message": "Postingan ini tidak ditemukan di Facebook (kemungkinan sudah dihapus). "
+                           "Angka terakhir yang tersimpan tetap dipakai."}
     except MetricsUnavailable as e:
         return {"success": False, "message": f"Metrik belum bisa diambil dari Facebook: {e}"}
     metric = store_post_metrics(db, post, m_data)
+    post.fb_removed_at = None   # it answered after all: sync it again
     db.commit()
     return {
         "success": True,
@@ -1292,6 +1297,7 @@ def serialize_post(p: Post, page_names: dict, full: bool = False, with_caption: 
         "error_message": p.error_message,
         "created_at": iso_utc(p.created_at),
         "published_at": iso_utc(p.published_at),
+        "fb_removed_at": iso_utc(p.fb_removed_at),
         "metrics": {
             "reactions": m.reactions if m else 0,
             "comments": m.comments if m else 0,

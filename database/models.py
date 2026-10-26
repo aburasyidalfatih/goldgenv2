@@ -166,6 +166,9 @@ class Post(Base):
     created_at = Column(DateTime, default=utc_now)
     published_at = Column(DateTime, nullable=True)
     error_message = Column(Text, nullable=True)
+    # When the metric sync found the post deleted on Facebook. Its last metrics stay
+    # as history; the sync no longer asks Facebook for it.
+    fb_removed_at = Column(DateTime, nullable=True)
 
     # First-comment promotion: None (not yet) | 'posting' | 'posted' | 'failed'
     promo_status = Column(String(20), nullable=True)

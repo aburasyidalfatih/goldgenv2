@@ -1396,7 +1396,8 @@ function autoPosterApp() {
         // ---------- live Facebook numbers ----------
         fmtCount(n) { return (Number(n) || 0).toLocaleString('id-ID'); },
         metricsStale(post) {
-            if (!post || post.status !== 'published') return false;
+            // Deleted on Facebook: its last numbers are final.
+            if (!post || post.status !== 'published' || post.fb_removed_at) return false;
             const checked = post.metrics?.last_checked_at;
             return !checked || Date.now() - new Date(checked).getTime() > 10 * 60 * 1000;
         },

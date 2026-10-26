@@ -536,7 +536,8 @@
                                     <strong x-text="fmtCount(post.metrics?.reach)"></strong> orang dijangkau
                                 </span>
                                 <span class="fb-insights-time"
-                                      x-text="post.metrics?.last_checked_at ? `per ${formatDate(post.metrics.last_checked_at)}` : 'belum diambil'"></span>
+                                      x-text="(post.metrics?.last_checked_at ? `per ${formatDate(post.metrics.last_checked_at)}` : 'belum diambil')
+                                              + (post.fb_removed_at ? ' · sudah dihapus dari Facebook' : '')"></span>
                                 <button type="button" @click="refreshPostMetrics(post)" :disabled="isRefreshingMetrics"
                                         class="fb-insights-refresh" aria-label="Perbarui angka dari Facebook">
                                     <i class="fa-solid fa-rotate" :class="isRefreshingMetrics && 'fa-spin'"></i>

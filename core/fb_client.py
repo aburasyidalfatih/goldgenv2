@@ -170,6 +170,14 @@ class MetricsUnavailable(Exception):
     """Facebook did not return a post's metrics (expired token, rate limit, timeout)."""
 
 
+class PostNotFound(MetricsUnavailable):
+    """
+    Facebook answered "does not exist" for the post. It says the same for a deleted
+    post and for a token missing pages_read_engagement; page_posts_readable() tells
+    the two apart.
+    """
+
+
 INSIGHT_METRIC_SETS = (
     ("post_media_view,post_total_media_view_unique", "post_total_media_view_unique", "post_media_view"),
     ("post_impressions,post_impressions_unique", "post_impressions_unique", "post_impressions"),
@@ -209,7 +217,9 @@ def fetch_post_metrics(page_id: str, access_token: str, fb_post_id: str) -> dict
     except Exception as e:
         raise MetricsUnavailable(f"Error fetching Layer 1 metrics: {redact_secrets(e)}") from e
     if "error" in data:
-        raise MetricsUnavailable(f"Facebook Error: {data['error'].get('message')}")
+        message = data["error"].get("message") or ""
+        error_cls = PostNotFound if "does not exist" in message.lower() else MetricsUnavailable
+        raise error_cls(f"Facebook Error: {message}")
     if "reactions" in data and "summary" in data["reactions"]:
         metrics["reactions"] = data["reactions"]["summary"].get("total_count", 0)
     if "comments" in data and "summary" in data["comments"]:
@@ -248,6 +258,21 @@ def fetch_post_metrics(page_id: str, access_token: str, fb_post_id: str) -> dict
     # No synthetic reach: if Insights is unreachable (missing read_insights
     # permission), reach stays unknown rather than reporting a fabricated number.
     return metrics
+
+
+def page_posts_readable(page_id: str, access_token: str) -> bool:
+    """
+    Whether the token can still list the page's posts (needs pages_read_engagement).
+    When it can, a post answering "does not exist" was really deleted on Facebook.
+    """
+    try:
+        data = requests.get(f"{BASE_GRAPH_URL}/{page_id}/posts",
+                            params={"fields": "id", "limit": 1, "access_token": access_token},
+                            timeout=20).json()
+    except Exception as e:
+        logger.warning(f"Could not list posts of page {page_id}: {redact_secrets(e)}")
+        return False
+    return "error" not in data and "data" in data
 
 
 # Graph API error codes meaning the token lacks a permission for this call.
