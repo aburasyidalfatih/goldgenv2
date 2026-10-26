@@ -127,6 +127,66 @@ def test_variasi_pemenang_dipakai_dulu_baru_topik_aslinya(client, make_page, mak
     assert serve[2::3] == [ketiga.id] * 3
 
 
+def test_satu_postingan_viral_kalah_dari_topik_yang_konsisten(client, make_page, make_post,
+                                                              finish_test_phase, topics, db):
+    page = make_page("111")
+    viral, konsisten = topics[5], topics[1]
+    finish_test_phase(page["id"], reach=900, skip={viral.id, konsisten.id})
+    make_post(page["id"], viral, days_ago=10, reach=5000)
+    for umur in (10, 8, 6, 4):
+        make_post(page["id"], konsisten, days_ago=umur, reach=3000)
+
+    pemenang = focus_winners(db, page["id"])
+
+    assert [w["leader"].id for w in pemenang[:2]] == [konsisten.id, viral.id]
+    assert (pemenang[0]["avg_reach"], pemenang[0]["posts"]) == (3000, 4)
+
+
+def test_variasi_yang_gagal_menurunkan_keluarganya(client, make_page, make_post, finish_test_phase,
+                                                   topics, db):
+    """Regresi: peringkat dulu memakai anggota terbaik, jadi variasi yang gagal tidak pernah terhitung."""
+    page = make_page("111")
+    pertama, kedua, ketiga = _three_winners(page["id"], make_post, finish_test_phase, topics)
+    assert focus_winners(db, page["id"])[0]["leader"].id == pertama.id
+
+    for i in range(6):
+        variasi = _variant(db, pertama, page["id"], f"Flop {i}", created_order=i)
+        make_post(page["id"], variasi, days_ago=3, reach=300)
+
+    pemenang = focus_winners(db, page["id"])
+    assert pemenang[0]["leader"].id == kedua.id
+    keluarga = next(w for w in pemenang if w["key"] == pertama.id)
+    assert keluarga["leader"].id == pertama.id, "induk tetap pemimpin keluarganya"
+    assert keluarga["posts"] == 7
+
+
+def test_variasi_yang_dinonaktifkan_tetap_dihitung_di_keluarganya(client, make_page, make_post,
+                                                                  finish_test_phase, topics, db):
+    page = make_page("111")
+    pertama, kedua, ketiga = _three_winners(page["id"], make_post, finish_test_phase, topics)
+    for i in range(6):
+        variasi = _variant(db, pertama, page["id"], f"Off {i}", created_order=i)
+        make_post(page["id"], variasi, days_ago=3, reach=300)
+        variasi.is_active = False
+    db.commit()
+
+    assert focus_winners(db, page["id"])[0]["leader"].id == kedua.id
+
+
+def test_variasi_yang_unggul_menjadi_pemimpin_keluarga(client, make_page, make_post, finish_test_phase,
+                                                       topics, db):
+    page = make_page("111")
+    pertama, kedua, ketiga = _three_winners(page["id"], make_post, finish_test_phase, topics)
+    variasi = _variant(db, kedua, page["id"], "Strong Variant")
+    for umur in (6, 5, 4):
+        make_post(page["id"], variasi, days_ago=umur, reach=9000)
+
+    pemenang = focus_winners(db, page["id"])
+
+    assert pemenang[0]["key"] == kedua.id
+    assert pemenang[0]["leader"].id == variasi.id
+
+
 def test_sekitar_sepuluh_persen_tetap_eksplorasi(client, make_page, make_post, finish_test_phase,
                                                  topics, db):
     page = make_page("111")
@@ -235,7 +295,7 @@ def test_analitik_melaporkan_tahap_dan_rotasi(client, make_page, make_post, fini
     fokus = client.get(f"/api/analytics/summary?page={page['id']}").json()["learning"]
     assert fokus["phase"] == "focus"
     assert [w["title"] for w in fokus["rotation"]] == [pertama.title, kedua.title, ketiga.title]
-    assert fokus["rotation"][0]["avg_reach"] == 15000
+    assert (fokus["rotation"][0]["avg_reach"], fokus["rotation"][0]["posts"]) == (15000, 1)
     assert fokus["next_rank"] == 2
 
 

@@ -1,5 +1,6 @@
 import random
 import logging
+import statistics
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import or_
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
@@ -35,6 +36,12 @@ EXPLORE_RATE = 0.10
 
 # Focus phase rotates over this many top reach winners: #1, #2, #3, #1, ...
 FOCUS_ROTATION_SIZE = 3
+
+# Winners are ranked as if every topic family also had this many posts at the
+# page's median reach, so one viral post cannot carry a family to the top on its
+# own. On the live pages (October 2026), topics whose single test post beat the
+# median 5-12x kept only about a fifth of that lead when posted again.
+REACH_PRIOR_POSTS = 3
 
 # How far back the nightly metric refresh reaches. Older posts keep the numbers
 # already recorded; their reach barely moves after a month anyway.
@@ -536,24 +543,57 @@ def _family_key(topic: ContentTopic) -> int:
     return topic.base_topic_id or topic.id
 
 
+def _mature_reach(db: Session, page_id: int) -> tuple[dict, dict, float]:
+    """
+    Reach of the page's mature, measured posts as (posts, total reach) per topic
+    and per family, plus the page's median reach. Families include posts of
+    variants switched off since: their results still say how the subject did.
+    """
+    rows = (db.query(Post.topic_id, ContentTopic.base_topic_id, PostMetric.reach)
+              .join(PostMetric, PostMetric.post_id == Post.id)
+              .join(ContentTopic, ContentTopic.id == Post.topic_id)
+              .filter(Post.page_id == page_id, Post.status == "published",
+                      Post.published_at.isnot(None), Post.published_at <= _mature_cutoff())
+              .all())
+    per_topic, per_family = {}, {}
+    for topic_id, base_id, reach in rows:
+        for stats, key in ((per_topic, topic_id), (per_family, base_id or topic_id)):
+            posts, total = stats.get(key, (0, 0))
+            stats[key] = (posts + 1, total + (reach or 0))
+    median = float(statistics.median(r or 0 for _, _, r in rows)) if rows else 0.0
+    return per_topic, per_family, median
+
+
+def _damped_reach(stats: tuple, prior: float) -> float:
+    """Average reach pulled toward `prior` by REACH_PRIOR_POSTS; 0 when nothing is measured."""
+    posts, total = stats
+    return (total + REACH_PRIOR_POSTS * prior) / (posts + REACH_PRIOR_POSTS) if posts else 0.0
+
+
 def focus_winners(db: Session, page_id: int, topics: list | None = None,
                   weights: dict | None = None) -> list:
     """
-    The page's top FOCUS_ROTATION_SIZE winner families, best first. A family is
-    ranked by its best member's measured average reach on this page, and its
-    leader is that member. Raw reach, not the selection weight: weights are capped,
-    so two strong winners could tie and come out in the wrong order. `fresh_variants` are the family's AI variants
-    this page has never produced, oldest first: they are used before the leader
-    itself is repeated.
+    The page's top FOCUS_ROTATION_SIZE winner families, best first.
+
+    A family is ranked by the reach of all its mature posts on this page together
+    (the base topic and every variant), damped toward the page's median reach
+    (REACH_PRIOR_POSTS). Variants that flop pull their family down, so a family
+    cannot stay on top on one viral test post while its variants underperform.
+    Raw reach, not the selection weight: weights are capped, so two strong winners
+    could tie and come out in the wrong order.
+
+    The leader (posted again once the variants run out, and the seed of new
+    variants) is the member with the best damped reach of its own. `fresh_variants`
+    are the family's AI variants this page has never produced, oldest first: they
+    are used before the leader itself is repeated.
     """
     topics = topics if topics is not None else topics_for_page(db, page_id)
     weights = weights if weights is not None else page_topic_weights(db, page_id, topics)
     produced = _produced_topic_ids(db, page_id)
-    reach = {r.topic_id: (r.avg_reach or 0.0) for r in
-             db.query(PageTopicWeight).filter(PageTopicWeight.page_id == page_id).all()}
+    per_topic, per_family, prior = _mature_reach(db, page_id)
 
     def strength(t):
-        return (reach.get(t.id, 0.0), weights.get(t.id, 0), t.id in produced)
+        return (_damped_reach(per_topic.get(t.id, (0, 0)), prior), weights.get(t.id, 0), t.id in produced)
 
     families = {}
     for topic in topics:
@@ -562,14 +602,16 @@ def focus_winners(db: Session, page_id: int, topics: list | None = None,
     ranked = []
     for key, members in families.items():
         leader = max(members, key=strength)
+        posts, total = per_family.get(key, (0, 0))
         fresh = sorted(
             (t for t in members if t.source == "ai" and t.id not in produced),
             key=lambda t: (_as_naive_utc(t.created_at), t.id),
         )
-        ranked.append((strength(leader), {
+        ranked.append(((_damped_reach((posts, total), prior),) + strength(leader)[1:], {
             "key": key,
             "leader": leader,
-            "avg_reach": reach.get(leader.id, 0.0),
+            "avg_reach": total / posts if posts else 0.0,   # plain family average, as shown
+            "posts": posts,
             "weight": weights.get(leader.id, 0),
             "fresh_variants": fresh,
         }))

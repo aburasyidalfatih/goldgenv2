@@ -634,14 +634,14 @@
                                         :class="w.rank === analyticsSummary.learning.next_rank ? 'text-white font-bold' : 'text-slate-300'">
                                         <span class="shrink-0" x-text="`#${w.rank}`"></span>
                                         <span class="truncate" x-text="w.title"></span>
-                                        <span class="shrink-0 text-slate-400 font-normal" x-text="`${w.avg_reach.toLocaleString('id-ID')}`"></span>
+                                        <span class="shrink-0 text-slate-400 font-normal" x-text="`${w.avg_reach.toLocaleString('id-ID')} · ${w.posts}×`"></span>
                                     </li>
                                 </template>
                             </ol>
                             <span class="text-xs text-gold-400 mt-1 block"
                                   x-text="analyticsSummary.learning.pending > 0
                                       ? `Menunggu metrik ${analyticsSummary.learning.pending} topik (≥48 jam setelah tayang)`
-                                      : `Berikutnya #${analyticsSummary.learning.next_rank} · angka = rata-rata reach`"></span>
+                                      : `Berikutnya #${analyticsSummary.learning.next_rank} · rata-rata reach topik + variasinya · jumlah postingan`"></span>
                         </div>
                     </template>
                     <template x-if="!analyticsSummary.learning">

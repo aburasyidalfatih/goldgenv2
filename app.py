@@ -786,7 +786,7 @@ def analytics_summary(page: Optional[int] = None, db: Session = Depends(get_db))
     winning = "Belum cukup data"
     if measured:
         if page:
-            # Same ranking the focus rotation serves first (raw average reach).
+            # Same ranking the focus rotation serves first (damped family reach).
             winners = focus_winners(db, page)
             top_topic = winners[0]["leader"] if winners else None
         else:
@@ -815,6 +815,7 @@ def analytics_summary(page: Optional[int] = None, db: Session = Depends(get_db))
                     "rank": i,
                     "title": w["leader"].title,
                     "avg_reach": round(w["avg_reach"]),
+                    "posts": w["posts"],
                     "fresh_variants": len(w["fresh_variants"]),
                 }
                 for i, w in enumerate(winners, start=1)
