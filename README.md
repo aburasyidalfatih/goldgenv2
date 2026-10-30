@@ -32,6 +32,9 @@ Aplikasi cerdas untuk memproduksi konten edukasi visual (poster infografis geolo
    * Responsif penuh: navigasi tab tetap terjangkau di HP, tablet, dan desktop.
    * Seluruh aset UI (Tailwind, Alpine, FontAwesome) di-*bundle* lokal di `static/vendor/` — dashboard tetap utuh tanpa koneksi internet.
 3. **AI Content Studio & Live Facebook Feed Mockup**:
+   * **Gaya konten mengikuti postingan yang viral** (laporan Meta Agu–Okt 2026 dari profil prospeksi emas dengan audiens yang sama):
+     * **Caption**: satu paragraf pendek (±250–450 karakter) dengan pembuka tegas maksimal 12 kata, alasan fisika/geologi yang sederhana, dan satu tips lapangan, lalu baris berisi 3–5 hashtag. Tanpa poin-poin, cerita orang pertama, CTA "save this", atau disclaimer bertumpuk. Di laporan itu, caption panjang yang dipecah banyak paragraf justru paling sepi.
+     * **Poster**: satu adegan cutaway 3D yang dramatis dengan emas terlihat jelas, judul 2–5 kata, maksimal 6 label pendek, opsional satu strip foto kecil. Tanpa paragraf teks, daftar tips bernomor, atau kotak disclaimer.
    * *Progress pipeline* dengan penghitung waktu berjalan dan nama model yang benar-benar dipakai.
    * Preview menyerupai feed Facebook asli: caption terpotong 3 baris dengan "Lihat selengkapnya", poster tampil penuh sesuai rasio.
    * Editor caption & judul poster, penghitung karakter, dan tombol salin caption.

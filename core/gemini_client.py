@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from google import genai
 from google.genai import types
 from config import DEFAULT_TEXT_MODEL, DEFAULT_CONTENT_LANGUAGE, GEMINI_TEXT_TIMEOUT_MS
@@ -36,28 +37,25 @@ def test_gemini_key(api_key: str, model_name: str = DEFAULT_TEXT_MODEL) -> dict:
             "message": f"Gagal terhubung ke Gemini API: {str(e)}"
         }
 
+DEFAULT_HASHTAGS = {
+    "id": "#emas #geologi #goldprospecting #goldpanning",
+    "en": "#goldprospecting #goldpanning #placergold #geology",
+}
+
+
 def _template_caption(title: str, concept: str, language: str) -> str:
+    """Same short one-paragraph format the model is asked for."""
     if language == "id":
-        return (
-            f"💡 EDUKASI PROSPEKSI EMAS: {title}\n\n{concept}\n\n"
-            "📌 Tips Lapangan:\n"
-            "1. Selalu uji sampel dengan dulang di berbagai kedalaman.\n"
-            "2. Perhatikan konsentrasi pasir besi hitam (magnetite).\n"
-            "3. Cari celah di batuan dasar (bedrock).\n\n"
-            "Bagaimana pengalaman Anda saat mendulang di titik seperti ini? "
-            "Tulis di kolom komentar! 👇\n\n"
-            "#emas #geologi #prospeksiemas #goldpanning #outdooradventure"
-        )
-    return (
-        f"💡 GOLD PROSPECTING 101: {title}\n\n{concept}\n\n"
-        "📌 Field Tips:\n"
-        "1. Always test-pan samples from several depths.\n"
-        "2. Watch for heavy concentrations of black sand (magnetite).\n"
-        "3. Hunt for cracks and crevices in the bedrock.\n\n"
-        "Ever panned a spot like this? "
-        "Tell us how it went in the comments! 👇\n\n"
-        "#goldprospecting #goldpanning #geology #placergold #outdoors"
-    )
+        return f"{concept} Uji dulang beberapa titik sebelum menggali.\n\n{DEFAULT_HASHTAGS['id']}"
+    return f"{concept} Test-pan a few spots before you dig.\n\n{DEFAULT_HASHTAGS['en']}"
+
+
+def _with_hashtags(caption: str, language: str) -> str:
+    """Every caption ends with a hashtag line (Threads also takes its one tag from it)."""
+    caption = caption.rstrip()
+    if re.search(r"(?:^|\s)#[^\W\d]\w*", caption):
+        return caption
+    return f"{caption}\n\n{DEFAULT_HASHTAGS.get(language, DEFAULT_HASHTAGS['en'])}"
 
 
 def template_content(topic_dict: dict, language: str = DEFAULT_CONTENT_LANGUAGE) -> dict:
@@ -88,7 +86,8 @@ def generate_post_content(api_key: str, topic_dict: dict, language: str = DEFAUL
     if language == "id":
         lang_prompt = "Bahasa Indonesia yang santai, edukatif, berbobot untuk komunitas pencari/penghobi emas sungai."
         hashtag_hint = "#goldprospecting #goldpanning #geologi #berburupenambang #emas dll"
-        caption_example = "Pernahkah Anda bertanya mengapa emas selalu berkumpul di tikungan dalam sungai?...\\n\\n[caption lengkap]"
+        caption_example = ("Emas tidak mengendap sembarangan. [satu paragraf pendek: alasan fisika/geologinya "
+                           "dan satu tips lapangan]\\n\\n#emas #goldprospecting #geologi")
     else:
         lang_prompt = (
             "natural American English for a U.S. audience of recreational gold prospectors "
@@ -97,25 +96,31 @@ def generate_post_content(api_key: str, topic_dict: dict, language: str = DEFAUL
             "friendly, down-to-earth, field-guide expert tone. Do NOT use any Indonesian words"
         )
         hashtag_hint = "e.g. #goldprospecting #goldpanning #placergold #geology #prospecting #goldrush"
-        caption_example = "Ever wonder why gold always piles up on the inside bend of a creek?...\\n\\n[full caption]"
+        caption_example = ("Gold doesn't settle randomly. [one short paragraph: the physical/geological reason "
+                           "and one field tip]\\n\\n#goldprospecting #placergold #geology")
 
+    # Poster and caption rules follow the posts that drew the most views and earnings
+    # on a gold-prospecting profile with this audience (Meta export, Aug-Oct 2026):
+    # one dramatic scene with visible gold and few words, and a short one-paragraph
+    # caption. Long, multi-paragraph, first-person or hedged captions drew the least.
     system_instruction = f"""
 You are a World-Class Geological Field Illustrator and Senior Gold Prospecting Educator.
 Your task is to create two things for a given gold prospecting topic:
-1. An extremely detailed, structured Image Generation Prompt for Imagen 3 to create a vintage national-park-style educational infographic poster (the canvas shape is set separately; keep the title, diagram and panels well inside the edges).
-   - The visual MUST follow the formula of high-end geological field manuals:
-     * A bold, aged slab-serif banner title at the top.
-     * A 3D cutaway / cross-section diagram showing water dynamics (arrows for current speed), gravel stratification, and bedrock cracks trapping gold flakes.
-     * Bottom section split into 4-5 identification panels / macro mineral photos (magnetite black sand, quartz, garnet, nuggets).
-     * Numbered field tips (1-5) and a vintage topographic field-guide aesthetic. Do not specify
-       colors or paper: the page's own color palette is added to the prompt separately.
-2. A viral, high-value Facebook Caption written in: {lang_prompt}.
-   - The caption must include:
-     * An attention-grabbing hook question.
-     * The physical/geological principle explained simply (why gold settles here).
-     * 3-4 bullet-point field tips on how to sample this in the field.
-     * An engaging call to action asking followers to share their experience.
-     * 4-6 relevant hashtags ({hashtag_hint}).
+1. An extremely detailed Image Generation Prompt for a vintage national-park-style educational poster (the canvas shape is set separately; keep the title and all text well inside the edges).
+   - Layout rules:
+     * A short, bold slab-serif title of 2-5 words at the top, plus one short punchy subtitle line.
+     * ONE dominant hero scene filling about two thirds of the poster: a dramatic, realistic 3D cutaway of the place this topic is about (river, bedrock, hillside or rock outcrop) where the gold is clearly visible: bright, warm gold flakes, nuggets or a glowing paystreak, easy to spot at a glance, exactly where the topic says it collects. Where real gold would be too fine to see, show it in one small magnified circle on the scene.
+     * At most 6 short labels (2-4 words each) with leader lines pointing at the key features of that scene.
+     * Optionally one narrow strip along the bottom with 3-4 small specimen or field photos, each captioned in 1-3 words.
+     * Keep text minimal: no paragraphs, no numbered tip lists, no legends, and no disclaimer or warning boxes.
+     * Use the reference blueprint for the subject matter, but follow this layout instead of its panel list.
+     * Do not specify colors or paper: the page's own color palette is added to the prompt separately.
+2. A Facebook caption written in: {lang_prompt}.
+   - ONE short paragraph of 250-450 characters, hashtags not included. No line breaks inside it, no bullet points, no numbered lists.
+   - Open with a punchy hook of at most 12 words: a bold claim ("Gold doesn't settle randomly.") or a short curiosity question ("Why does gold hide in the darkest sand?").
+   - Then explain the one physical or geological reason in plain words, and give one concrete field tip.
+   - Confident and accurate: say what usually happens and why, without disclaimers or hedging asides. No first-person stories, no "save this" call to action, at most one emoji. You may end with one short question.
+   - Then a blank line and one line of 3-5 relevant hashtags ({hashtag_hint}).
 
 Output MUST be strictly valid JSON matching this schema:
 {{
@@ -164,4 +169,5 @@ Tolong buatkan visual prompt Imagen 3 dan caption Facebook yang berkualitas ting
             logger.warning(f"Gemini response missing '{key}'. Using template value.")
             data[key] = value
 
+    data["caption"] = _with_hashtags(str(data["caption"]), language)
     return data
