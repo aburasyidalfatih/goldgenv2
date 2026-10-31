@@ -75,6 +75,35 @@ def template_content(topic_dict: dict, language: str = DEFAULT_CONTENT_LANGUAGE)
         "caption": _template_caption(title, topic_dict.get("core_concept", ""), language),
     }
 
+SCENE_LAYOUT = """     * A short, bold slab-serif title of 2-5 words at the top, plus one short punchy subtitle line.
+     * ONE dominant hero scene filling about two thirds of the poster: a dramatic, realistic 3D cutaway of the place this topic is about (river, bedrock, hillside or rock outcrop) where the gold is clearly visible: bright, warm gold flakes, nuggets or a glowing paystreak, easy to spot at a glance, exactly where the topic says it collects. Where real gold would be too fine to see, show it in one small magnified circle on the scene.
+     * At most 6 short labels (2-4 words each) with leader lines pointing at the key features of that scene.
+     * Optionally one narrow strip along the bottom with 3-4 small specimen or field photos, each captioned in 1-3 words."""
+
+SPECIMEN_LAYOUT = """     * A short, bold slab-serif title of 2-5 words at the top, plus one short punchy subtitle line.
+     * A SPECIMEN CHART filling at least two thirds of the poster: 4-6 large photo-realistic hand specimens of the rocks or minerals this topic is about, in a clean grid of one or two rows on a natural ground or field-table background, lit like museum specimen photography, so readers can compare them with rocks they have found. No decorative landscape or scenery filling the rest of the poster. Where gold is present, make it bright and easy to spot.
+     * Under each specimen, its name in bold and one short identifying feature of 2-6 words (e.g. "brassy cubes, black streak").
+     * Optionally make one specimen larger, with a small magnified close-up circle of its key feature."""
+
+# Topics about telling rocks and minerals apart get the specimen chart; topics about
+# where and how gold moves or settles keep the hero scene.
+SPECIMEN_CATEGORIES = ("Geology", "Minerals")
+SPECIMEN_TITLE = re.compile(
+    r"quartz|gossan|iron hat|greenstone|schist|\brocks?\b|mariposite|limestone|volcanic|banded iron|\bores?\b"
+    r"|mineral|crystal|sulfide|pyrite|galena|sphalerite|\bmica\b|black sand|magnetite|hematite|meteorite"
+    r"|\bflakes?\b|\bnuggets?\b|raw gold|specimen|\brust",
+    re.I,
+)
+
+
+def poster_layout(topic_dict: dict) -> str:
+    """'specimen' for rock and mineral identification topics, 'scene' for everything else."""
+    if (topic_dict.get("category") in SPECIMEN_CATEGORIES
+            and SPECIMEN_TITLE.search(topic_dict.get("title") or "")):
+        return "specimen"
+    return "scene"
+
+
 def generate_post_content(api_key: str, topic_dict: dict, language: str = DEFAULT_CONTENT_LANGUAGE,
                           model_name: str = DEFAULT_TEXT_MODEL, provider: str = "gemini",
                           reasoning: str | None = None) -> dict:
@@ -103,15 +132,22 @@ def generate_post_content(api_key: str, topic_dict: dict, language: str = DEFAUL
     # on a gold-prospecting profile with this audience (Meta export, Aug-Oct 2026):
     # one dramatic scene with visible gold and few words, and a short one-paragraph
     # caption. Long, multi-paragraph, first-person or hedged captions drew the least.
+    # Rock and mineral topics use a specimen chart instead: side-by-side realistic
+    # specimens are what prospectors compare with their own finds and answer with
+    # photos of their collection in the comments.
+    specimen = poster_layout(topic_dict) == "specimen"
+    layout_rules = SPECIMEN_LAYOUT if specimen else SCENE_LAYOUT
+    caption_ending = (
+        "End with one short line inviting readers to post a photo of a similar rock or specimen they have "
+        "found, in the caption's language (e.g. \"Found a rusty quartz piece like this? Drop a photo below.\")."
+        if specimen else "You may end with one short question."
+    )
     system_instruction = f"""
 You are a World-Class Geological Field Illustrator and Senior Gold Prospecting Educator.
 Your task is to create two things for a given gold prospecting topic:
 1. An extremely detailed Image Generation Prompt for a vintage national-park-style educational poster (the canvas shape is set separately; keep the title and all text well inside the edges).
    - Layout rules:
-     * A short, bold slab-serif title of 2-5 words at the top, plus one short punchy subtitle line.
-     * ONE dominant hero scene filling about two thirds of the poster: a dramatic, realistic 3D cutaway of the place this topic is about (river, bedrock, hillside or rock outcrop) where the gold is clearly visible: bright, warm gold flakes, nuggets or a glowing paystreak, easy to spot at a glance, exactly where the topic says it collects. Where real gold would be too fine to see, show it in one small magnified circle on the scene.
-     * At most 6 short labels (2-4 words each) with leader lines pointing at the key features of that scene.
-     * Optionally one narrow strip along the bottom with 3-4 small specimen or field photos, each captioned in 1-3 words.
+{layout_rules}
      * Keep text minimal: no paragraphs, no numbered tip lists, no legends, and no disclaimer or warning boxes.
      * Use the reference blueprint for the subject matter, but follow this layout instead of its panel list.
      * Do not specify colors or paper: the page's own color palette is added to the prompt separately.
@@ -119,7 +155,7 @@ Your task is to create two things for a given gold prospecting topic:
    - ONE short paragraph of 250-450 characters, hashtags not included. No line breaks inside it, no bullet points, no numbered lists.
    - Open with a punchy hook of at most 12 words: a bold claim ("Gold doesn't settle randomly.") or a short curiosity question ("Why does gold hide in the darkest sand?").
    - Then explain the one physical or geological reason in plain words, and give one concrete field tip.
-   - Confident and accurate: say what usually happens and why, without disclaimers or hedging asides. No first-person stories, no "save this" call to action, at most one emoji. You may end with one short question.
+   - Confident and accurate: say what usually happens and why, without disclaimers or hedging asides. No first-person stories, no "save this" call to action, at most one emoji. {caption_ending}
    - Then a blank line and one line of 3-5 relevant hashtags ({hashtag_hint}).
 
 Output MUST be strictly valid JSON matching this schema:

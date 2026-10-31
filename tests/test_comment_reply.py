@@ -22,12 +22,19 @@ def _ts(hours_ago):
     return (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).strftime("%Y-%m-%dT%H:%M:%S+0000")
 
 
-def _comment(cid, message, name="Budi Santoso", uid="u1", hours_ago=1, replied_by=None):
-    return {
+def _comment(cid, message, name="Budi Santoso", uid="u1", hours_ago=1, replied_by=None, attachment=None):
+    c = {
         "id": cid, "message": message, "created_time": _ts(hours_ago),
         "from": {"id": uid, "name": name},
         "comments": {"data": [{"from": {"id": replied_by}}] if replied_by else []},
     }
+    if attachment:
+        c["attachment"] = attachment
+    return c
+
+
+def _photo(src="https://scontent.fb/batu.jpg"):
+    return {"type": "photo", "media": {"image": {"src": src}}}
 
 
 def _post(pid, comments, message="Kenapa emas mengendap di tikungan dalam sungai?"):
@@ -64,10 +71,11 @@ def fb(monkeypatch):
 def ai(monkeypatch):
     state = {"calls": [], "error": None, "skip": set()}
 
-    def generate(text_ai, page_name, language, post_message, commenter_name, comment_message, recent):
+    def generate(text_ai, page_name, language, post_message, commenter_name, comment_message, recent, photo=None):
         if state["error"]:
             raise RuntimeError(state["error"])
-        state["calls"].append({"comment": comment_message, "recent": list(recent), "post": post_message})
+        state["calls"].append({"comment": comment_message, "recent": list(recent), "post": post_message,
+                               "photo": photo})
         if comment_message in state["skip"]:
             return {"skip": True, "reason": "spam", "reply": ""}
         return {"skip": False, "reason": "", "reply": f"Betul {commenter_name.split()[0]}, arusnya melambat di situ."}
@@ -318,7 +326,7 @@ def test_balasan_dirapikan_maksimal_dua_kalimat(mentah, hasil):
 def test_generate_memakai_penyedia_teks_dan_membatasi_kalimat(monkeypatch):
     dipanggil = {}
 
-    def palsu(provider, api_key, model, system, user, temperature, reasoning=None):
+    def palsu(provider, api_key, model, system, user, temperature, reasoning=None, images=None):
         dipanggil["reasoning"] = reasoning
         dipanggil.update(provider=provider, system=system, user=user)
         return json.dumps({"skip": False, "reason": "",
@@ -414,3 +422,87 @@ def test_verifikasi_tidak_mengirim_page_token_ke_browser(client, monkeypatch):
     res = client.post("/api/pages/verify", json={"page_id": "1", "access_token": "u"}).json()
 
     assert "RAHASIA" not in json.dumps(res)
+
+
+
+# ------------------------------------------------------------ komentar berfoto
+
+
+@pytest.fixture
+def photos(monkeypatch):
+    """Unduhan foto komentar tiruan: URL di `state['broken']` gagal diunduh."""
+    state = {"downloaded": [], "broken": set()}
+
+    def download(url):
+        state["downloaded"].append(url)
+        return None if url in state["broken"] else (b"batu-jpeg", "image/jpeg")
+
+    monkeypatch.setattr(cr, "download_photo", download)
+    return state
+
+
+def test_komentar_hanya_foto_dibalas_dengan_melihat_fotonya(client, page, fb, ai, photos, db):
+    """Penambang sering hanya mengirim foto batu temuannya; dulu komentar ini dilewati tanpa jejak."""
+    fb["posts"] = [_post("p1", [_comment("foto", "", attachment=_photo())])]
+
+    res = _scan(client, page)
+
+    assert res["replied"] == 1, res
+    assert ai["calls"][0]["photo"] == (b"batu-jpeg", "image/jpeg")
+    row = db.query(CommentReply).filter_by(fb_comment_id="foto").one()
+    assert (row.comment_message, row.comment_image_url) == ("", "https://scontent.fb/batu.jpg")
+    assert client.get("/api/replies").json()["items"][0]["comment_image_url"] == row.comment_image_url
+
+
+def test_foto_dengan_teks_mengirim_keduanya(client, page, fb, ai, photos, db):
+    fb["posts"] = [_post("p1", [_comment("ft", "What is that my dear", attachment=_photo())])]
+
+    _scan(client, page)
+
+    assert ai["calls"][0]["comment"] == "What is that my dear"
+    assert ai["calls"][0]["photo"] is not None
+
+
+def test_stiker_dan_gif_tetap_dilewati(client, page, fb, ai, photos, db):
+    fb["posts"] = [_post("p1", [
+        _comment("stk", "", attachment={"type": "sticker", "media": {"image": {"src": "https://x/s.png"}}}),
+        _comment("gif", "", attachment={"type": "animated_image_share"}),
+    ])]
+
+    res = _scan(client, page)
+
+    assert res["replied"] == 0 and ai["calls"] == [] and photos["downloaded"] == []
+    assert db.query(CommentReply).count() == 0
+
+
+def test_foto_yang_gagal_diunduh_dilewati_tanpa_ai(client, page, fb, ai, photos, db):
+    url = "https://scontent.fb/kedaluwarsa.jpg"
+    photos["broken"].add(url)
+    fb["posts"] = [_post("p1", [_comment("rusak", "", attachment=_photo(url))])]
+
+    res = _scan(client, page)
+
+    assert res["skipped"] == 1 and ai["calls"] == []
+    assert "tidak bisa dimuat" in db.query(CommentReply).filter_by(fb_comment_id="rusak").one().note
+
+
+def test_prompt_foto_melarang_memastikan_emas_dan_melampirkan_gambar(monkeypatch):
+    dipanggil = {}
+
+    def palsu(provider, api_key, model, system, user, temperature, reasoning=None, images=None):
+        dipanggil.update(system=system, user=user, images=images)
+        return json.dumps({"skip": False, "reason": "", "reply": "Urat kuarsanya kelihatan jelas, layak dicek."})
+
+    monkeypatch.setattr(cr, "complete_json", palsu)
+    cr.generate_comment_reply({"provider": "openai", "api_key": "k", "model": "m"},
+                              "Info Emas", "id", "Caption", "Budi", "", [], photo=(b"img", "image/jpeg"))
+
+    assert dipanggil["images"] == [(b"img", "image/jpeg")]
+    assert "menyertakan foto" in dipanggil["user"] and "(tanpa teks)" in dipanggil["user"]
+    assert "JANGAN PERNAH memastikan itu emas atau meteorit" in dipanggil["system"]
+
+
+def test_foto_komentar_diambil_dari_lampiran_bertipe_foto():
+    assert cr.comment_photo_url({"attachment": _photo("https://a/b.jpg")}) == "https://a/b.jpg"
+    assert cr.comment_photo_url({"attachment": {"type": "sticker", "media": {"image": {"src": "x"}}}}) is None
+    assert cr.comment_photo_url({}) is None

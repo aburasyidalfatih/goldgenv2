@@ -91,17 +91,25 @@ def _post_dropping_unsupported(url: str, api_key: str, body: dict, optional: tup
 
 
 def complete_json(api_key: str, model: str, system: str, user: str, temperature: float,
-                  reasoning: str | None = None) -> str:
+                  reasoning: str | None = None, images: list | None = None) -> str:
     """
     Returns the raw JSON text produced by a chat model. `reasoning` ('low',
     'medium', 'high') caps how much a reasoning model thinks before answering;
     thinking tokens are billed as output, so a low effort makes captions cheaper.
+    `images` is an optional list of (bytes, mime type) sent along with `user`.
     """
+    content = user
+    if images:
+        content = [{"type": "text", "text": user}] + [
+            {"type": "image_url",
+             "image_url": {"url": f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"}}
+            for data, mime in images
+        ]
     body = {
         "model": model,
         "messages": [
             {"role": "system", "content": system},
-            {"role": "user", "content": user},
+            {"role": "user", "content": content},
         ],
         "response_format": {"type": "json_object"},
         "temperature": temperature,

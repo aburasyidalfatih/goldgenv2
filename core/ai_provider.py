@@ -74,13 +74,16 @@ def ai_backend(db: Session, role: str) -> dict:
 
 
 def complete_json(provider: str, api_key: str, model: str, system: str, user: str,
-                  temperature: float, reasoning: str | None = None) -> str:
+                  temperature: float, reasoning: str | None = None,
+                  images: list | None = None) -> str:
     """
     Asks the chosen text model for a JSON answer and returns the raw text.
     `reasoning` ('low'/'medium'/'high') limits the model's thinking tokens.
+    `images` is an optional list of (bytes, mime type) the model looks at too.
     """
     if provider == "openai":
-        return openai_client.complete_json(api_key, model, system, user, temperature, reasoning)
+        return openai_client.complete_json(api_key, model, system, user, temperature, reasoning,
+                                           images=images)
 
     if not api_key:
         raise ValueError("Gemini API Key belum diisi. Silakan isi di tab Pengaturan UI.")
@@ -90,10 +93,13 @@ def complete_json(provider: str, api_key: str, model: str, system: str, user: st
     client = genai.Client(api_key=api_key,
                           http_options=types.HttpOptions(timeout=GEMINI_TEXT_TIMEOUT_MS))
 
+    contents = ([user] + [types.Part.from_bytes(data=data, mime_type=mime) for data, mime in images]
+                if images else user)
+
     def ask(thinking):
         return client.models.generate_content(
             model=model,
-            contents=user,
+            contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=system,
                 response_mime_type="application/json",

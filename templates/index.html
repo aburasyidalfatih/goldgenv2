@@ -1101,7 +1101,14 @@
                               x-text="replyStatusLabel(item.status)"></span>
                     </header>
 
-                    <p class="text-sm text-slate-200 whitespace-pre-line break-words" x-text="item.comment_message"></p>
+                    <p class="text-sm text-slate-200 whitespace-pre-line break-words"
+                       x-text="item.comment_message || (item.comment_image_url ? '(hanya foto)' : '')"></p>
+                    <template x-if="item.comment_image_url">
+                        <a :href="item.comment_image_url" target="_blank" rel="noopener"
+                           class="text-xs text-slate-400 hover:text-gold-400 underline decoration-dotted">
+                            <i class="fa-regular fa-image mr-1"></i>Lihat foto di komentar
+                        </a>
+                    </template>
 
                     <p class="text-xs text-slate-400 truncate">
                         <i class="fa-regular fa-newspaper mr-1"></i>

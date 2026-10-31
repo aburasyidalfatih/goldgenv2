@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 # Fanspage's theme (core.poster_style), appended after this.
 AESTHETIC_ENHANCER = (
     " Highly detailed vintage geological field guide poster, national park educational chart aesthetic. "
-    "One dramatic, realistic 3D cutaway hero scene with clearly visible gold, a short bold title and only "
+    "Photo-realistic rocks, minerals and water with clearly visible gold, a short bold title and only "
     "a few short labels; no paragraphs of text and no disclaimer boxes. Sharp typography, crisp contrast, "
     "museum quality."
 )

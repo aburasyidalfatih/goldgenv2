@@ -238,6 +238,8 @@ class CommentReply(Base):
 
     fb_comment_id = Column(String(100), nullable=False, unique=True, index=True)
     comment_message = Column(Text, nullable=False, default="")
+    # Photo attached to the comment (Facebook CDN link, expires after a while)
+    comment_image_url = Column(Text, nullable=True)
     commenter_name = Column(String(200), nullable=True)
     commenter_id = Column(String(100), nullable=True)
     comment_created_at = Column(DateTime, nullable=True)

@@ -69,6 +69,7 @@ ADDED_COLUMNS = [
     ("posts", "threads_media_token", "VARCHAR(64)"),
     ("posts", "threads_media_expires", "DATETIME"),
     ("posts", "fb_removed_at", "DATETIME"),
+    ("comment_replies", "comment_image_url", "TEXT"),
 ]
 
 

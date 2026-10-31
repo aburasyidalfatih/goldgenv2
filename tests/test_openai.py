@@ -372,3 +372,45 @@ def test_model_yang_menolak_ukuran_4_5_memakai_kanvas_standar(monkeypatch):
     openai_client.generate_image_bytes("sk-x", "gpt-image-2-mini", "poster", "4:5")
 
     assert ukuran == ["1088x1360", "1024x1536"]
+
+
+def test_openai_menerima_foto_sebagai_data_url(monkeypatch):
+    bodies = []
+
+    def post(url, headers, json, timeout):
+        bodies.append(json)
+        return FakeResponse(200, {"choices": [{"finish_reason": "stop", "message": {"content": '{"ok": 1}'}}]})
+
+    monkeypatch.setattr(openai_client.requests, "post", post)
+    openai_client.complete_json("sk-x", "gpt-6-luna", "s", "Komentar", 0.7, images=[(b"\xff\xd8jpeg", "image/jpeg")])
+
+    content = bodies[0]["messages"][1]["content"]
+    assert content[0] == {"type": "text", "text": "Komentar"}
+    assert content[1]["type"] == "image_url"
+    assert content[1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
+
+
+def test_tanpa_foto_isi_pesan_tetap_teks_biasa(monkeypatch):
+    bodies = []
+    monkeypatch.setattr(openai_client.requests, "post", lambda url, headers, json, timeout: (
+        bodies.append(json) or FakeResponse(200, {"choices": [{"message": {"content": "{}"}}]})))
+    openai_client.complete_json("sk-x", "gpt-6-luna", "s", "Komentar", 0.7)
+    assert bodies[0]["messages"][1]["content"] == "Komentar"
+
+
+def test_gemini_menerima_foto_bersama_teks(monkeypatch):
+    import core.ai_provider as provider
+    sent = {}
+
+    class Models:
+        def generate_content(self, model, contents, config):
+            sent["contents"] = contents
+            return type("R", (), {"text": '{"ok": true}'})()
+
+    monkeypatch.setattr(provider.genai, "Client", lambda api_key, **kw: type("C", (), {"models": Models()})())
+    provider.complete_json("gemini", "k", "gemini-3-flash", "s", "Komentar", 0.7,
+                           images=[(b"\x89PNGdata", "image/png")])
+
+    assert sent["contents"][0] == "Komentar"
+    assert sent["contents"][1].inline_data.mime_type == "image/png"
+    assert sent["contents"][1].inline_data.data == b"\x89PNGdata"

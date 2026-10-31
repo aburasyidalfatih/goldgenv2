@@ -35,6 +35,7 @@ Aplikasi cerdas untuk memproduksi konten edukasi visual (poster infografis geolo
    * **Gaya konten mengikuti postingan yang viral** (laporan Meta Agu–Okt 2026 dari profil prospeksi emas dengan audiens yang sama):
      * **Caption**: satu paragraf pendek (±250–450 karakter) dengan pembuka tegas maksimal 12 kata, alasan fisika/geologi yang sederhana, dan satu tips lapangan, lalu baris berisi 3–5 hashtag. Tanpa poin-poin, cerita orang pertama, CTA "save this", atau disclaimer bertumpuk. Di laporan itu, caption panjang yang dipecah banyak paragraf justru paling sepi.
      * **Poster**: satu adegan cutaway 3D yang dramatis dengan emas terlihat jelas, judul 2–5 kata, maksimal 6 label pendek, opsional satu strip foto kecil. Tanpa paragraf teks, daftar tips bernomor, atau kotak disclaimer.
+     * **Topik identifikasi batu & mineral** (kategori Geology/Minerals yang judulnya tentang batu, mis. pirit, kuarsa, gossan, black sand) memakai **katalog spesimen**: 4–6 foto spesimen realistis berdampingan, masing-masing dengan nama dan satu ciri pembeda, dan caption-nya ditutup ajakan mengirim foto batu temuan pembaca. Format ini yang memancing penambang memamerkan koleksinya di komentar. Topik sungai, alat, strategi, dan aturan tetap memakai adegan cutaway.
    * *Progress pipeline* dengan penghitung waktu berjalan dan nama model yang benar-benar dipakai.
    * Preview menyerupai feed Facebook asli: caption terpotong 3 baris dengan "Lihat selengkapnya", poster tampil penuh sesuai rasio.
    * Editor caption & judul poster, penghitung karakter, dan tombol salin caption.
@@ -71,7 +72,8 @@ Tab **Komentar** membalas komentar pengikut di **semua postingan** Fanspage, bai
 
 * **Per Fanspage**: sakelar nyala/mati, mode **Otomatis** (langsung terkirim) atau **Perlu persetujuan** (AI menyiapkan draft, Anda yang menekan kirim), dan batas balasan per jam (bawaan 20).
 * Diperiksa **tiap 10 menit**, dengan jeda acak 15–45 detik antar balasan. Tombol *Periksa sekarang* menjalankannya seketika.
-* **Tidak dibalas**: komentar Fanspage sendiri, komentar yang sudah dibalas admin, stiker/foto tanpa teks, komentar bertautan, spam/judi/kasar (diputuskan AI), dan komentar yang lebih lama dari 48 jam.
+* **Komentar berfoto ikut dibalas**, termasuk yang hanya berisi foto. Penambang sering memamerkan batu temuannya, terutama di postingan batuan dan mineral. Foto diunduh dan ikut dikirim ke AI, yang menyebut satu ciri yang terlihat dan menyarankan satu uji (streak, magnet, dihancurkan lalu didulang, atau assay). AI **tidak pernah memastikan sebuah batu adalah emas atau menaksir nilainya** dari foto, dan melewati foto yang tidak berkaitan. Foto yang gagal diunduh dilewati. Di tab Komentar ada tautan *Lihat foto di komentar*.
+* **Tidak dibalas**: komentar Fanspage sendiri, komentar yang sudah dibalas admin, stiker/GIF tanpa teks, komentar bertautan, spam/judi/kasar (diputuskan AI), dan komentar yang lebih lama dari 48 jam.
 * **Sekali balas**: setiap komentar dikunci dengan ID uniknya, jadi tidak pernah dibalas dua kali walau pemeriksaan berjalan bersamaan.
 * Balasan sebelumnya ikut diberikan ke AI agar kalimatnya tidak berulang.
 * Memakai penyedia teks yang dipilih di Pengaturan (Gemini atau OpenAI).

@@ -301,7 +301,7 @@ def fetch_recent_comments(page_id: str, access_token: str, since_days: int = 14,
     fields = (
         "id,message,permalink_url,created_time,"
         "comments.order(reverse_chronological).limit(25)"
-        "{id,message,created_time,from{id,name},attachment{type},comments.limit(25){from{id}}}"
+        "{id,message,created_time,from{id,name},attachment{type,media{image{src}}},comments.limit(25){from{id}}}"
     )
     try:
         resp = requests.get(

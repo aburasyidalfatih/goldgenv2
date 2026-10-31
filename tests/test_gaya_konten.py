@@ -64,8 +64,50 @@ def test_prompt_meminta_poster_satu_adegan_dengan_emas_terlihat(captured):
 
 
 def test_gaya_poster_ditambahkan_ke_setiap_prompt_gambar():
-    assert "hero scene with clearly visible gold" in AESTHETIC_ENHANCER
+    assert "clearly visible gold" in AESTHETIC_ENHANCER
     assert "no disclaimer boxes" in AESTHETIC_ENHANCER
+    assert "hero scene" not in AESTHETIC_ENHANCER, "berlaku untuk kedua tata letak"
+
+
+SPECIMEN_KEYS = {
+    "black_sand_indicator", "pyrite_vs_gold_test", "gold_in_quartz_veins", "gossan_iron_hats", "gold_host_rocks",
+    "raw_gold_sizes", "mica_vs_gold", "your_first_flake", "mariposite_mother_lode", "carlin_invisible_gold",
+    "volcanic_banded_quartz", "banded_iron_formation_gold", "arsenopyrite_gold_sulfide", "test_a_promising_rock",
+}
+
+
+def test_topik_identifikasi_batu_memakai_katalog_spesimen():
+    specimen = {t["topic_key"] for t in SEED_TOPICS if gemini_client.poster_layout(t) == "specimen"}
+    assert specimen == SPECIMEN_KEYS
+
+
+@pytest.mark.parametrize("topic, layout", [
+    ({"category": "Minerals", "title": "Gossan or Just Rusty Float?"}, "specimen"),
+    ({"category": "Geology", "title": "Read the Crystal Faces"}, "specimen"),
+    ({"category": "Equipment", "title": "Hot Rocks & Ground Balance"}, "scene"),
+    ({"category": "Fluvial", "title": "The Boulder Shadow: How Giant Rocks Catch Heavy Gold"}, "scene"),
+    ({"category": "Geology", "title": "Bedrock Crevices: Nature's Ultimate Natural Gold Sluice"}, "scene"),
+])
+def test_variasi_ikut_dipilah_dari_judul_dan_kategori(topic, layout):
+    assert gemini_client.poster_layout(topic) == layout
+
+
+def test_topik_batuan_meminta_katalog_dan_ajakan_kirim_foto(captured):
+    pyrite = next(t for t in SEED_TOPICS if t["topic_key"] == "pyrite_vs_gold_test")
+    gemini_client.generate_post_content("k", pyrite, language="en")
+    system = captured["system"]
+
+    assert "SPECIMEN CHART" in system and "photo-realistic hand specimens" in system
+    assert "inviting readers to post a photo" in system
+    assert "ONE dominant hero scene" not in system and "You may end with one short question" not in system
+
+
+def test_topik_sungai_tetap_adegan_tanpa_ajakan_foto(captured):
+    gemini_client.generate_post_content("k", SEED_TOPICS[0], language="en")
+    system = captured["system"]
+
+    assert "ONE dominant hero scene" in system and "You may end with one short question" in system
+    assert "SPECIMEN CHART" not in system and "inviting readers to post a photo" not in system
 
 
 @pytest.mark.parametrize("language", ["en", "id"])

@@ -3,10 +3,15 @@ Comment auto-reply: answers audience comments on every post of a Fanspage —
 whether this app published it or someone posted it by hand — the way a friendly
 human admin would, in at most two sentences.
 
+Photo comments (often a prospector showing a rock they found) are answered too:
+the model sees the photo, names a visible feature and suggests a test, and never
+says a rock is gold or worth anything.
+
 Safety rails:
 - the unique comment id in `comment_replies` means a comment is answered once;
-- comments by the page itself, already answered by an admin, without text, with
-  links, or older than REPLY_LOOKBACK_HOURS are left alone;
+- comments by the page itself, already answered by an admin, with neither text
+  nor photo (stickers, GIFs), with links, or older than REPLY_LOOKBACK_HOURS are
+  left alone;
 - an hourly cap per page and a random pause between replies keep the page from
   looking (and being flagged) like a bot.
 """
@@ -17,6 +22,7 @@ import re
 import time
 from datetime import datetime, timedelta, timezone
 
+import requests
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -36,6 +42,7 @@ DEFAULT_MAX_PER_HOUR = 20
 MAX_REPLY_CHARS = 300
 REPLY_GAP_SECONDS = (15, 45)     # pause between replies in scheduled runs
 RECENT_REPLIES_FOR_VARIETY = 8
+MAX_PHOTO_BYTES = 8 * 1024 * 1024
 
 LINK_PATTERN = re.compile(r"https?://|www\.|\b[\w-]+\.(com|net|org|id|ly|me|xyz|link)\b|wa\.me", re.I)
 UNCERTAIN_NOTE = ("Status tidak pasti: koneksi terputus saat mengirim balasan. "
@@ -95,6 +102,11 @@ Aturan balasan:
 - Menyapa nama depan pengomentar boleh sesekali, tidak wajib.
 - Jangan menjanjikan apa pun: lokasi pasti emas, jual-beli, harga, atau ajakan bertemu.
 
+Bila komentar menyertakan foto (terlampir):
+- Lihat fotonya. Bila memperlihatkan batu, mineral, spesimen, atau hasil dulang, tanggapi seperti sesama penambang yang antusias melihat temuan orang lain: sebut 1 ciri yang benar-benar terlihat di foto (mis. urat kuarsa, noda karat, kristal mengilap, pasir hitam) dan sarankan 1 uji sederhana yang cocok untuk batu itu (mis. uji magnet, uji kekerasan, streak test, dihancurkan lalu didulang, atau assay).
+- Boleh menyebut kemungkinan jenisnya dengan kata "kelihatannya" (mis. "kelihatannya amethyst"), tetapi JANGAN PERNAH memastikan itu emas atau meteorit, dan jangan menaksir kadar, nilai, atau harga dari foto.
+- Bila fotonya tidak berkaitan (selfie, meme, iklan, gambar tidak jelas), skip=true.
+
 Lewati (skip=true) bila komentar berisi spam, promosi, judi, penipuan, ujaran kebencian atau kata kasar, hanya menandai teman tanpa kata lain, atau memang tidak bisa dibalas dengan wajar.
 
 Balas HANYA dengan JSON: {{"skip": false, "reason": "", "reply": "..."}}"""
@@ -111,19 +123,24 @@ LANGUAGE_RULES = {
 
 def generate_comment_reply(text_ai: dict, page_name: str, language: str, post_message: str,
                            commenter_name: str, comment_message: str,
-                           recent_replies: list) -> dict:
-    """Returns {"skip": bool, "reason": str, "reply": str} from the chosen text model."""
+                           recent_replies: list, photo: tuple | None = None) -> dict:
+    """
+    Returns {"skip": bool, "reason": str, "reply": str} from the chosen text model.
+    `photo` is the comment's attached image as (bytes, mime type).
+    """
     lang_rule = LANGUAGE_RULES["id" if language == "id" else "en"]
     recent = "\n".join(f"- {r}" for r in recent_replies) or "- (belum ada)"
     user_prompt = (
         f"Postingan Fanspage:\n\"\"\"{(post_message or '(postingan tanpa teks)')[:600]}\"\"\"\n\n"
-        f"Komentar dari {commenter_name or 'seorang pengikut'}:\n\"\"\"{comment_message[:800]}\"\"\"\n\n"
-        f"Balasan Fanspage sebelumnya (jangan mirip):\n{recent}\n\n"
+        f"Komentar dari {commenter_name or 'seorang pengikut'}:\n\"\"\"{comment_message[:800] or '(tanpa teks)'}\"\"\"\n\n"
+        + ("Komentar ini menyertakan foto (terlampir).\n\n" if photo else "")
+        + f"Balasan Fanspage sebelumnya (jangan mirip):\n{recent}\n\n"
         "Tulis balasannya."
     )
     raw = complete_json(text_ai["provider"], text_ai["api_key"], text_ai["model"],
                         SYSTEM_PROMPT.format(page_name=page_name or "ini", language_rule=lang_rule),
-                        user_prompt, 0.9, reasoning=text_ai.get("reasoning"))
+                        user_prompt, 0.9, reasoning=text_ai.get("reasoning"),
+                        images=[photo] if photo else None)
     data = json.loads(raw or "{}")
     if not isinstance(data, dict):
         raise RuntimeError("Format balasan dari model AI tidak sesuai.")
@@ -157,6 +174,30 @@ def replies_sent_last_hour(db: Session, page_row_id: int) -> int:
 # ------------------------------------------------------------------ candidates
 
 
+def comment_photo_url(comment: dict) -> str | None:
+    """The image of a photo attached to a comment; stickers and GIFs don't count."""
+    attachment = comment.get("attachment") or {}
+    if attachment.get("type") != "photo":
+        return None
+    return ((attachment.get("media") or {}).get("image") or {}).get("src") or None
+
+
+def download_photo(url: str) -> tuple | None:
+    """(bytes, mime type) of a comment photo, or None when it can't be fetched."""
+    try:
+        with requests.get(url, timeout=20, stream=True) as resp:
+            mime = (resp.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+            if resp.status_code != 200 or not mime.startswith("image/"):
+                return None
+            data = resp.raw.read(MAX_PHOTO_BYTES + 1, decode_content=True)
+    except Exception as e:
+        logger.warning(f"[Replies] Comment photo could not be downloaded: {redact_secrets(e)}")
+        return None
+    if not data or len(data) > MAX_PHOTO_BYTES:
+        return None
+    return data, mime
+
+
 def find_new_comments(db: Session, page: FacebookPage, posts: list, now: datetime) -> list:
     """Comments worth answering, oldest first."""
     cutoff = now - timedelta(hours=REPLY_LOOKBACK_HOURS)
@@ -170,14 +211,16 @@ def find_new_comments(db: Session, page: FacebookPage, posts: list, now: datetim
                    for r in (c.get("comments") or {}).get("data", [])):
                 continue                                   # an admin already answered it
             message = (c.get("message") or "").strip()
-            if not message:
-                continue                                   # sticker / photo only
+            image_url = comment_photo_url(c)
+            if not message and not image_url:
+                continue                                   # sticker / GIF only
             created = _parse_time(c.get("created_time"))
             if created and created < cutoff:
                 continue
             found.append({
                 "fb_comment_id": c["id"],
                 "comment_message": message,
+                "comment_image_url": image_url,
                 "commenter_name": author.get("name"),
                 "commenter_id": author.get("id"),
                 "comment_created_at": created,
@@ -279,13 +322,16 @@ def process_page_comments(db: Session, page: FacebookPage, mode: str | None = No
                                   "sisa komentar dibalas pada putaran berikutnya.")
             break
 
+        photo = download_photo(cand["comment_image_url"]) if cand.get("comment_image_url") else None
         if LINK_PATTERN.search(cand["comment_message"]):
             decision = {"skip": True, "reason": "Berisi tautan (kemungkinan spam).", "reply": ""}
+        elif not cand["comment_message"] and not photo:
+            decision = {"skip": True, "reason": "Foto di komentar tidak bisa dimuat.", "reply": ""}
         else:
             try:
                 decision = generate_comment_reply(
                     text_ai, page.name, page.content_language or DEFAULT_CONTENT_LANGUAGE, cand["post_message"],
-                    cand["commenter_name"], cand["comment_message"], recent)
+                    cand["commenter_name"], cand["comment_message"], recent, photo=photo)
             except Exception as e:
                 # Usually quota or a bad key: stop here and retry these comments next run.
                 logger.warning(f"[Replies] AI failed for '{page.name}': {e}")
@@ -347,6 +393,7 @@ def serialize_reply(row: CommentReply) -> dict:
         "post_url": row.post_url,
         "fb_comment_id": row.fb_comment_id,
         "comment_message": row.comment_message,
+        "comment_image_url": row.comment_image_url,
         "commenter_name": row.commenter_name or "Pengikut",
         "comment_created_at": iso_utc(row.comment_created_at),
         "reply_message": row.reply_message or "",

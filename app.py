@@ -1492,11 +1492,16 @@ def regenerate_reply_endpoint(reply_id: int, db: Session = Depends(get_db)):
     if text_ai["missing"]:
         return {"success": False, "message": text_ai["missing"]}
     page = get_page(db, row.page_id)
+    # Facebook photo links expire: an old one simply falls back to the text.
+    photo = comment_reply.download_photo(row.comment_image_url) if row.comment_image_url else None
+    if not row.comment_message and not photo:
+        return {"success": False, "message": "Foto di komentar ini sudah tidak bisa dimuat. "
+                                             "Anda tetap bisa menulis balasan sendiri."}
     try:
         decision = comment_reply.generate_comment_reply(
             text_ai, page.name if page else "", (page.content_language if page else None) or DEFAULT_CONTENT_LANGUAGE,
             row.post_message, row.commenter_name, row.comment_message,
-            comment_reply._recent_replies(db, row.page_id))
+            comment_reply._recent_replies(db, row.page_id), photo=photo)
     except Exception as e:
         logger.exception("Reply regenerate error")
         return {"success": False, "message": f"Gagal menyusun balasan: {e}"}
