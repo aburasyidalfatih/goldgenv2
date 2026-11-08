@@ -59,6 +59,10 @@ COMMENT_REPLY_INTERVAL_MINUTES = 10
 REPLY_ALERT_AFTER_MINUTES = 30
 # page id (or "job") -> when its current streak of failed runs began
 _reply_failing_since: dict = {}
+# An autopilot upload that never reached Facebook (a DNS or connection hiccup) is
+# sent again every few minutes, for as long as a posting slot may still run late.
+PUBLISH_RETRY_INTERVAL_MINUTES = 5
+PUBLISH_RETRY_WINDOW = timedelta(seconds=AUTOPOST_GRACE_SECONDS)
 
 def get_setting_val(db, key, default=""):
     s = db.query(AppSetting).filter(AppSetting.key == key).first()
@@ -184,35 +188,7 @@ def auto_generate_and_post_job(page_row_id: int):
         poster_sementara = None   # the row now owns the file
 
         # 5. Publish to this page
-        try:
-            fb_res = publish_photo_to_page(
-                page_id=page.page_id,
-                access_token=page.access_token,
-                image_path=abspath,
-                caption=content["caption"],
-            )
-        except Exception as e:
-            fb_res = {"success": False, "message": f"Koneksi ke Facebook gagal: {e}"}
-
-        if fb_res.get("success"):
-            post.status = "published"
-            post.fb_post_id = fb_res.get("post_id")
-            post.fb_post_url = fb_res.get("post_url")
-            post.published_at = datetime.now(timezone.utc)
-        else:
-            post.status = "failed"
-            post.error_message = fb_res.get("message")
-        db.commit()
-
-        if fb_res.get("success"):
-            logger.info(f"[Scheduler] '{page.name}' published: {fb_res.get('post_url')}")
-        else:
-            logger.error(f"[Scheduler] '{page.name}' publish failed: {fb_res.get('message')}")
-            notify(db, f"publish:{page.id}", f"Gagal posting ke '{page.name}'",
-                   f"Konten '{post.visual_title}' sudah dibuat, tetapi Facebook menolaknya.\n\n"
-                   f"Pesan Facebook: {fb_res.get('message')}\n\n"
-                   "Draft tersimpan dengan status Gagal; buka di Studio untuk mencoba publish lagi. "
-                   "Jika pesannya soal token atau izin, perbarui token di tab Fanspage.")
+        _publish_post(db, page, post)
 
     except Exception as e:
         logger.error(f"[Scheduler] Error during auto-post job for page {page_row_id}: {e}")
@@ -226,6 +202,99 @@ def auto_generate_and_post_job(page_row_id: int):
                f"Error: {e}\n\n"
                "Penyebab umum: saldo/kuota API AI habis, API key dicabut, atau layanan AI sedang gangguan. "
                "Cek tab Pengaturan > Uji Koneksi.")
+    finally:
+        db.close()
+
+
+def _publish_post(db, page, post) -> None:
+    """
+    Uploads a post already marked "publishing" to its page and records the outcome.
+    An upload that never reached Facebook is left to publish_retry_job instead of
+    mailing a failure: a passing DNS or network hiccup should not cost the slot.
+    """
+    try:
+        fb_res = publish_photo_to_page(
+            page_id=page.page_id,
+            access_token=page.access_token,
+            image_path=post.image_path,
+            caption=post.caption,
+        )
+    except Exception as e:
+        fb_res = {"success": False, "message": f"Koneksi ke Facebook gagal: {e}"}
+
+    if fb_res.get("success"):
+        post.status = "published"
+        post.fb_post_id = fb_res.get("post_id")
+        post.fb_post_url = fb_res.get("post_url")
+        post.published_at = datetime.now(timezone.utc)
+        post.error_message = None
+        post.publish_retry_until = None
+        db.commit()
+        logger.info(f"[Scheduler] '{page.name}' published: {fb_res.get('post_url')}")
+        return
+
+    post.status = "failed"
+    if fb_res.get("retryable"):
+        post.error_message = f"Facebook tidak bisa dihubungi: {fb_res.get('message')}"
+        if post.publish_retry_until is None:
+            post.publish_retry_until = datetime.now(timezone.utc).replace(tzinfo=None) + PUBLISH_RETRY_WINDOW
+        db.commit()
+        logger.warning(f"[Scheduler] '{page.name}' could not reach Facebook; retrying every "
+                       f"{PUBLISH_RETRY_INTERVAL_MINUTES} min until {post.publish_retry_until} UTC: {fb_res.get('message')}")
+        return
+
+    post.error_message = fb_res.get("message")
+    post.publish_retry_until = None
+    db.commit()
+    logger.error(f"[Scheduler] '{page.name}' publish failed: {fb_res.get('message')}")
+    notify(db, f"publish:{page.id}", f"Gagal posting ke '{page.name}'",
+           f"Konten '{post.visual_title}' sudah dibuat, tetapi Facebook menolaknya.\n\n"
+           f"Pesan Facebook: {fb_res.get('message')}\n\n"
+           "Draft tersimpan dengan status Gagal; buka di Studio untuk mencoba publish lagi. "
+           "Jika pesannya soal token atau izin, perbarui token di tab Fanspage.")
+
+
+def publish_retry_job():
+    """
+    Every few minutes: sends again the autopilot posts whose upload never reached
+    Facebook, until their retry window closes. Then the failure is mailed once.
+    """
+    db = SessionLocal()
+    try:
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        pending = db.query(Post).filter(Post.status == "failed", Post.publish_retry_until.isnot(None)).all()
+        for post in pending:
+            page = db.query(FacebookPage).filter(FacebookPage.id == post.page_id).first()
+            if not page or page.is_active is False or not page.autopilot_enabled or not page.access_token:
+                post.publish_retry_until = None   # paused or removed meanwhile: left to the user
+                db.commit()
+                continue
+            if now >= post.publish_retry_until:
+                post.publish_retry_until = None
+                db.commit()
+                minutes = int(PUBLISH_RETRY_WINDOW.total_seconds() // 60)
+                logger.error(f"[Scheduler] '{page.name}' post {post.id}: Facebook still unreachable "
+                             f"after {minutes} min of retries; giving up.")
+                notify(db, f"publish:{page.id}", f"Gagal posting ke '{page.name}'",
+                       f"Konten '{post.visual_title}' sudah dibuat, tetapi Facebook tidak bisa dihubungi, "
+                       f"juga setelah dicoba ulang otomatis tiap {PUBLISH_RETRY_INTERVAL_MINUTES} menit "
+                       f"selama {minutes} menit.\n\n"
+                       f"Error terakhir: {post.error_message}\n\n"
+                       "Draft tersimpan dengan status Gagal; buka di Studio untuk mencoba publish lagi.")
+                continue
+            # Claim it like a manual publish does, so the two never upload it together.
+            claimed = (db.query(Post)
+                       .filter(Post.id == post.id, Post.status == "failed", Post.publish_retry_until.isnot(None))
+                       .update({Post.status: "publishing"}, synchronize_session=False))
+            db.commit()
+            if claimed != 1:
+                continue
+            db.refresh(post)
+            logger.info(f"[Scheduler] Retrying the upload of post {post.id} to '{page.name}'...")
+            _publish_post(db, page, post)
+    except Exception as e:
+        logger.error(f"[Scheduler] Publish retry job error: {e}")
+        db.rollback()
     finally:
         db.close()
 
@@ -722,6 +791,16 @@ def start_scheduler():
         comment_reply_job,
         IntervalTrigger(minutes=COMMENT_REPLY_INTERVAL_MINUTES, timezone=SCHEDULER_TZ),
         id='comment_reply_job',
+        replace_existing=True,
+        misfire_grace_time=300,
+        coalesce=True,
+        max_instances=1,
+    )
+    # Autopilot uploads that never reached Facebook, sent again.
+    scheduler.add_job(
+        publish_retry_job,
+        IntervalTrigger(minutes=PUBLISH_RETRY_INTERVAL_MINUTES, timezone=SCHEDULER_TZ),
+        id='publish_retry_job',
         replace_existing=True,
         misfire_grace_time=300,
         coalesce=True,

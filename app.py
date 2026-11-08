@@ -165,6 +165,7 @@ async def lifespan(app: FastAPI):
         stuck = db.query(Post).filter(Post.status == "publishing").all()
         for post in stuck:
             post.status = "failed"
+            post.publish_retry_until = None   # may be live already: never re-sent automatically
             post.error_message = (
                 "Status tidak pasti: aplikasi berhenti saat mempublikasikan. "
                 "Periksa Fanspage terlebih dahulu sebelum publish ulang agar tidak tayang ganda."
@@ -1051,6 +1052,7 @@ def publish_post_endpoint(post_id: int, req: PublishRequest, db: Session = Depen
     if req.visual_title:
         post.visual_title = req.visual_title
     post.page_id = target.id
+    post.publish_retry_until = None   # the user took over from the automatic retry
     db.commit()   # persist the claim so concurrent requests see "publishing"
 
     # Publish to Facebook
@@ -1299,6 +1301,7 @@ def serialize_post(p: Post, page_names: dict, full: bool = False, with_caption: 
         "created_at": iso_utc(p.created_at),
         "published_at": iso_utc(p.published_at),
         "fb_removed_at": iso_utc(p.fb_removed_at),
+        "publish_retry_until": iso_utc(p.publish_retry_until),
         "metrics": {
             "reactions": m.reactions if m else 0,
             "comments": m.comments if m else 0,

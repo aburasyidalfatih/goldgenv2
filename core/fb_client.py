@@ -2,6 +2,7 @@ import os
 import time
 import requests
 import logging
+from urllib3.exceptions import ConnectTimeoutError, NewConnectionError
 from datetime import datetime, timedelta, timezone
 from config import FB_GRAPH_API_VERSION
 from core.utils import redact_secrets
@@ -163,7 +164,22 @@ def publish_photo_to_page(page_id: str, access_token: str, image_path: str, capt
 
     except Exception as e:
         logger.error(f"Failed to publish photo to Facebook: {redact_secrets(e)}")
-        return {"success": False, "message": redact_secrets(e)}
+        return {"success": False, "message": redact_secrets(e), "retryable": never_reached_facebook(e)}
+
+
+def never_reached_facebook(exc: Exception) -> bool:
+    """
+    True when a request failed before any connection to Facebook was made (DNS
+    failure, refused connection, connect timeout), so sending it again cannot make
+    a second post. A read timeout or a connection dropped mid-upload is False:
+    Facebook may already have published it.
+    """
+    if isinstance(exc, requests.exceptions.ConnectTimeout):
+        return True
+    if isinstance(exc, requests.exceptions.ConnectionError) and exc.args:
+        # NameResolutionError is a NewConnectionError
+        return isinstance(getattr(exc.args[0], "reason", None), (NewConnectionError, ConnectTimeoutError))
+    return False
 
 # (metrics requested, metric used as reach, metric used as total views), newest first.
 class MetricsUnavailable(Exception):

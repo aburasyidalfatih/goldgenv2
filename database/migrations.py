@@ -70,6 +70,7 @@ ADDED_COLUMNS = [
     ("posts", "threads_media_expires", "DATETIME"),
     ("posts", "fb_removed_at", "DATETIME"),
     ("comment_replies", "comment_image_url", "TEXT"),
+    ("posts", "publish_retry_until", "DATETIME"),
 ]
 
 

@@ -268,7 +268,12 @@
                         <template x-if="currentPost.error_message">
                             <div class="text-xs bg-rose-500/10 border border-rose-500/30 text-rose-300 rounded-lg p-3 flex items-start gap-2">
                                 <i class="fa-solid fa-triangle-exclamation mt-0.5"></i>
-                                <span x-text="currentPost.error_message"></span>
+                                <span>
+                                    <span x-text="currentPost.error_message"></span>
+                                    <template x-if="currentPost.publish_retry_until && currentPost.status === 'failed'">
+                                        <span class="block mt-1 text-amber-300">Dicoba ulang otomatis tiap 5 menit sampai <span x-text="formatDate(currentPost.publish_retry_until)"></span>.</span>
+                                    </template>
+                                </span>
                             </div>
                         </template>
 

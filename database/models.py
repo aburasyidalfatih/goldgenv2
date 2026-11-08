@@ -169,6 +169,9 @@ class Post(Base):
     # When the metric sync found the post deleted on Facebook. Its last metrics stay
     # as history; the sync no longer asks Facebook for it.
     fb_removed_at = Column(DateTime, nullable=True)
+    # An autopilot upload that never reached Facebook (DNS or connection failure) is
+    # sent again every few minutes until this moment; None = no retry pending.
+    publish_retry_until = Column(DateTime, nullable=True)
 
     # First-comment promotion: None (not yet) | 'posting' | 'posted' | 'failed'
     promo_status = Column(String(20), nullable=True)
