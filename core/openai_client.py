@@ -44,9 +44,28 @@ def _error_message(response) -> str:
         return f"HTTP {response.status_code}"
 
 
+class OpenAIUnavailable(RuntimeError):
+    """OpenAI answered, but is overloaded or failing for a moment (rate limit, 5xx)."""
+
+
+def _error_code(response) -> str:
+    try:
+        error = response.json()["error"]
+        return str(error.get("code") or error.get("type") or "")
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return ""
+
+
 def _raise_for_error(response) -> None:
-    if response.status_code >= 400:
-        raise RuntimeError(f"OpenAI menolak permintaan: {_error_message(response)}")
+    if response.status_code < 400:
+        return
+    message = _error_message(response)
+    # 429 means both a passing rate limit and an exhausted balance
+    # ("insufficient_quota"); only the first goes away by waiting.
+    if response.status_code >= 500 or (response.status_code == 429
+                                       and _error_code(response) != "insufficient_quota"):
+        raise OpenAIUnavailable(f"OpenAI sedang sibuk atau gangguan (HTTP {response.status_code}): {message}")
+    raise RuntimeError(f"OpenAI menolak permintaan: {message}")
 
 
 def orientation(aspect_ratio: str) -> str:

@@ -28,7 +28,7 @@ from core.feedback_loop import (
 )
 from core.topic_evolution import evolve_topics
 from core.maintenance import remove_generated_image, cleanup_orphan_images
-from core.ai_provider import ai_backend
+from core.ai_provider import ai_backend, is_transient_ai_error
 from core.comment_reply import process_page_comments
 from core.promo_comment import process_page_promos
 from core.instagram import process_page_instagram
@@ -59,10 +59,15 @@ COMMENT_REPLY_INTERVAL_MINUTES = 10
 REPLY_ALERT_AFTER_MINUTES = 30
 # page id (or "job") -> when its current streak of failed runs began
 _reply_failing_since: dict = {}
-# An autopilot upload that never reached Facebook (a DNS or connection hiccup) is
-# sent again every few minutes, for as long as a posting slot may still run late.
-PUBLISH_RETRY_INTERVAL_MINUTES = 5
-PUBLISH_RETRY_WINDOW = timedelta(seconds=AUTOPOST_GRACE_SECONDS)
+# A passing hiccup should not cost a posting slot. An autopilot upload that never
+# reached Facebook (DNS, connection), and content the AI service could not make
+# for a moment (timeout, overload), are tried again every few minutes, for as long
+# as a posting slot may still run late. Only then is the failure mailed.
+RETRY_INTERVAL_MINUTES = 5
+RETRY_WINDOW = timedelta(seconds=AUTOPOST_GRACE_SECONDS)
+# One-off job that runs a slot again after a passing AI failure. Deliberately not
+# under AUTOPOST_JOB_PREFIX: a schedule reload (page edited) must not cancel it.
+CONTENT_RETRY_JOB_PREFIX = "content_retry_"
 
 def get_setting_val(db, key, default=""):
     s = db.query(AppSetting).filter(AppSetting.key == key).first()
@@ -102,10 +107,12 @@ def parse_post_times(raw: str) -> list[tuple[int, int]]:
     return times
 
 
-def auto_generate_and_post_job(page_row_id: int):
+def auto_generate_and_post_job(page_row_id: int, retry_until: datetime | None = None):
     """
     Scheduled job for ONE Fanspage: picks that page's best topic, generates its own
     poster & caption, and publishes it there. Every page produces its own content.
+    `retry_until` (UTC) is set when this run tries a slot again after a passing AI
+    failure; it is when that slot is given up.
     """
     db = SessionLocal()
     poster_sementara = None
@@ -132,6 +139,12 @@ def auto_generate_and_post_job(page_row_id: int):
                 notify(db, f"no-ai-key:{backend['label']}", f"Autopilot berhenti: API key {backend['label']} kosong",
                        f"Jadwal posting '{page.name}' dilewati: {backend['missing']}\n"
                        "Isi API key di tab Pengaturan, lalu klik Uji Koneksi.")
+                return
+
+        if retry_until is not None:
+            first_try = (retry_until - RETRY_WINDOW).astimezone(timezone.utc).replace(tzinfo=None)
+            if db.query(Post.id).filter(Post.page_id == page.id, Post.created_at >= first_try).first():
+                logger.info(f"[Scheduler] '{page.name}' got a post since its failed slot. Retry dropped.")
                 return
 
         lang = page.content_language or DEFAULT_CONTENT_LANGUAGE
@@ -197,6 +210,18 @@ def auto_generate_and_post_job(page_row_id: int):
         if poster_sementara:
             remove_generated_image(poster_sementara)
         page_name = page.name if page else f"#{page_row_id}"
+        transient = is_transient_ai_error(e)
+        if transient and _schedule_content_retry(page_row_id, page_name, retry_until):
+            return
+        if transient and retry_until is not None:
+            minutes = int(RETRY_WINDOW.total_seconds() // 60)
+            notify(db, f"autopost:{page_row_id}", f"Autopilot gagal membuat konten untuk '{page_name}'",
+                   f"Jadwal posting '{page_name}' gagal sebelum sampai ke Facebook: layanan AI sedang "
+                   f"lambat atau gangguan, juga setelah dicoba ulang otomatis tiap {RETRY_INTERVAL_MINUTES} "
+                   f"menit selama {minutes} menit. Slot ini dilewati; jadwal berikutnya tetap berjalan.\n\n"
+                   f"Error terakhir: {e}\n\n"
+                   "Bila terus berulang, cek status layanan AI dan tab Pengaturan > Uji Koneksi.")
+            return
         notify(db, f"autopost:{page_row_id}", f"Autopilot gagal membuat konten untuk '{page_name}'",
                f"Jadwal posting '{page_name}' gagal sebelum sampai ke Facebook.\n\n"
                f"Error: {e}\n\n"
@@ -204,6 +229,31 @@ def auto_generate_and_post_job(page_row_id: int):
                "Cek tab Pengaturan > Uji Koneksi.")
     finally:
         db.close()
+
+
+def _schedule_content_retry(page_row_id: int, page_name: str, retry_until: datetime | None) -> bool:
+    """
+    Runs the slot again in a few minutes, after its content failed for a passing
+    reason. False once the slot's retry window has closed (the caller mails then).
+    """
+    now = datetime.now(timezone.utc)
+    deadline = retry_until or now + RETRY_WINDOW
+    run_at = now + timedelta(minutes=RETRY_INTERVAL_MINUTES)
+    if run_at > deadline:
+        logger.error(f"[Scheduler] '{page_name}': AI service still failing at the end of the "
+                     f"retry window; slot given up.")
+        return False
+    scheduler.add_job(
+        auto_generate_and_post_job,
+        DateTrigger(run_date=run_at),
+        args=[page_row_id, deadline],
+        id=f"{CONTENT_RETRY_JOB_PREFIX}{page_row_id}",
+        replace_existing=True,
+        misfire_grace_time=RETRY_INTERVAL_MINUTES * 60,
+    )
+    logger.warning(f"[Scheduler] '{page_name}': AI service failed for a moment; trying the slot again "
+                   f"at {run_at:%H:%M} UTC (gives up at {deadline:%H:%M} UTC).")
+    return True
 
 
 def _publish_post(db, page, post) -> None:
@@ -237,10 +287,10 @@ def _publish_post(db, page, post) -> None:
     if fb_res.get("retryable"):
         post.error_message = f"Facebook tidak bisa dihubungi: {fb_res.get('message')}"
         if post.publish_retry_until is None:
-            post.publish_retry_until = datetime.now(timezone.utc).replace(tzinfo=None) + PUBLISH_RETRY_WINDOW
+            post.publish_retry_until = datetime.now(timezone.utc).replace(tzinfo=None) + RETRY_WINDOW
         db.commit()
         logger.warning(f"[Scheduler] '{page.name}' could not reach Facebook; retrying every "
-                       f"{PUBLISH_RETRY_INTERVAL_MINUTES} min until {post.publish_retry_until} UTC: {fb_res.get('message')}")
+                       f"{RETRY_INTERVAL_MINUTES} min until {post.publish_retry_until} UTC: {fb_res.get('message')}")
         return
 
     post.error_message = fb_res.get("message")
@@ -272,12 +322,12 @@ def publish_retry_job():
             if now >= post.publish_retry_until:
                 post.publish_retry_until = None
                 db.commit()
-                minutes = int(PUBLISH_RETRY_WINDOW.total_seconds() // 60)
+                minutes = int(RETRY_WINDOW.total_seconds() // 60)
                 logger.error(f"[Scheduler] '{page.name}' post {post.id}: Facebook still unreachable "
                              f"after {minutes} min of retries; giving up.")
                 notify(db, f"publish:{page.id}", f"Gagal posting ke '{page.name}'",
                        f"Konten '{post.visual_title}' sudah dibuat, tetapi Facebook tidak bisa dihubungi, "
-                       f"juga setelah dicoba ulang otomatis tiap {PUBLISH_RETRY_INTERVAL_MINUTES} menit "
+                       f"juga setelah dicoba ulang otomatis tiap {RETRY_INTERVAL_MINUTES} menit "
                        f"selama {minutes} menit.\n\n"
                        f"Error terakhir: {post.error_message}\n\n"
                        "Draft tersimpan dengan status Gagal; buka di Studio untuk mencoba publish lagi.")
@@ -799,7 +849,7 @@ def start_scheduler():
     # Autopilot uploads that never reached Facebook, sent again.
     scheduler.add_job(
         publish_retry_job,
-        IntervalTrigger(minutes=PUBLISH_RETRY_INTERVAL_MINUTES, timezone=SCHEDULER_TZ),
+        IntervalTrigger(minutes=RETRY_INTERVAL_MINUTES, timezone=SCHEDULER_TZ),
         id='publish_retry_job',
         replace_existing=True,
         misfire_grace_time=300,

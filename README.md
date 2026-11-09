@@ -42,6 +42,7 @@ Aplikasi cerdas untuk memproduksi konten edukasi visual (poster infografis geolo
    * **Dialog konfirmasi sebelum publish** — menampilkan nama Fanspage tujuan dan cuplikan caption.
    * **Anti publish ganda**: postingan dikunci dengan status *Sedang Dipublikasikan* selama unggahan berlangsung, jadi klik ganda atau dua tab terbuka tidak pernah menghasilkan postingan kembar di Facebook. Bila aplikasi mati di tengah unggahan, postingan ditandai *Gagal* dengan peringatan untuk memeriksa Fanspage sebelum publish ulang.
    * **Coba ulang saat gangguan jaringan**: bila unggahan autopilot gagal *sebelum* sampai ke Facebook (DNS gagal, koneksi ditolak), postingan dikirim ulang otomatis tiap 5 menit selama 1 jam; email baru dikirim bila tetap gagal. Koneksi yang putus di tengah unggahan tidak diulang, supaya tidak tayang dua kali.
+   * **Coba ulang saat layanan AI gangguan sesaat**: bila pembuatan caption atau poster gagal karena layanan AI lambat (timeout), koneksinya putus, atau sedang sibuk (HTTP 429 *rate limit* / 5xx), slot itu dijalankan ulang otomatis tiap 5 menit selama 1 jam; email baru dikirim bila tetap gagal. Galat yang tidak hilang dengan menunggu (API key ditolak, saldo/kuota habis, prompt ditolak) tetap langsung diemailkan. Coba ulang dibatalkan bila Fanspage itu sudah mendapat postingan lain sejak slotnya, atau autopilot-nya dimatikan.
    * Buka ulang postingan lama dari Riwayat ke Studio, render ulang gambar, atau hapus draft (beserta file posternya).
 4. **Feedback Learning Loop (Kecerdasan Adaptif)** — tiap Fanspage belajar dari **reach**-nya sendiri, dalam dua tahap:
    * **Tahap Uji**: setiap topik dasar diposting **tepat sekali** di Fanspage itu (urutan acak, tanpa pengulangan) sebelum ada topik yang diulang. Kartu Analitik menampilkan progresnya, mis. *12/40*.
@@ -218,7 +219,7 @@ sebagai `autoposter.db`, lalu jalankan lagi. Poster di `storage/` tidak ikut dib
 
 Tab **Pengaturan > 4. Notifikasi Email**. Aplikasi mengirim email bila:
 
-- posting otomatis gagal (AI error / saldo habis, Facebook menolak, atau Facebook tetap tidak bisa dihubungi setelah 1 jam dicoba ulang),
+- posting otomatis gagal (API key AI ditolak / saldo habis, layanan AI tetap gangguan setelah 1 jam dicoba ulang, Facebook menolak, atau Facebook tetap tidak bisa dihubungi setelah 1 jam dicoba ulang),
 - token Fanspage tidak berlaku (dicek tiap malam saat sinkron metrik),
 - API key AI kosong saat jadwal posting tiba,
 - balas komentar otomatis terhenti, atau sinkron metrik / evolusi topik / backup gagal.

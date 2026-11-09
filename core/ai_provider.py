@@ -5,7 +5,10 @@ Text and image are chosen separately, so e.g. Gemini can write while OpenAI draw
 """
 import logging
 
+import httpx
+import requests
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types
 from sqlalchemy.orm import Session
 
@@ -71,6 +74,27 @@ def ai_backend(db: Session, role: str) -> dict:
         "reasoning": reasoning if reasoning in REASONING_LEVELS else DEFAULT_REASONING,
         "quality": quality if quality in IMAGE_QUALITIES else DEFAULT_IMAGE_QUALITY,
     }
+
+
+def is_transient_ai_error(exc: BaseException | None) -> bool:
+    """
+    True when an AI call failed for a passing reason: a timeout, a dropped
+    connection, or the service overloaded or failing for a moment. The same request
+    may well work a few minutes later. A rejected key, an exhausted balance or a
+    refused prompt is not transient: waiting does not fix those.
+    Follows explicit chaining (`raise ... from err`), as the poster code wraps errors.
+    """
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        if isinstance(exc, (requests.exceptions.Timeout, requests.exceptions.ConnectionError,
+                            httpx.TransportError, openai_client.OpenAIUnavailable,
+                            genai_errors.ServerError)):
+            return True
+        if isinstance(exc, genai_errors.ClientError) and exc.code == 429:
+            return True
+        exc = exc.__cause__
+    return False
 
 
 def complete_json(provider: str, api_key: str, model: str, system: str, user: str,
