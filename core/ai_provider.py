@@ -5,7 +5,6 @@ Text and image are chosen separately, so e.g. Gemini can write while OpenAI draw
 """
 import logging
 
-import httpx
 import requests
 from google import genai
 from google.genai import errors as genai_errors
@@ -23,6 +22,14 @@ from core import openai_client
 from database.models import AppSetting
 
 logger = logging.getLogger(__name__)
+
+# httpx is not a dependency of this app (google-genai 3.x no longer pulls it in), so
+# its network errors only count when some library happens to have installed it.
+try:
+    import httpx
+    _HTTPX_NETWORK_ERRORS: tuple = (httpx.TransportError,)
+except ImportError:
+    _HTTPX_NETWORK_ERRORS = ()
 
 # Cost controls (Settings). Thinking tokens are billed as output, and image
 # quality decides how many image tokens are spent: both are most of the bill.
@@ -88,8 +95,8 @@ def is_transient_ai_error(exc: BaseException | None) -> bool:
     while exc is not None and id(exc) not in seen:
         seen.add(id(exc))
         if isinstance(exc, (requests.exceptions.Timeout, requests.exceptions.ConnectionError,
-                            httpx.TransportError, openai_client.OpenAIUnavailable,
-                            genai_errors.ServerError)):
+                            openai_client.OpenAIUnavailable, genai_errors.ServerError,
+                            *_HTTPX_NETWORK_ERRORS)):
             return True
         if isinstance(exc, genai_errors.ClientError) and exc.code == 429:
             return True
