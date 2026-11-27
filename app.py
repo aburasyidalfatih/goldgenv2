@@ -41,7 +41,7 @@ from core.ai_provider import ai_backend, PROVIDER_LABELS
 from core.imagen_client import generate_poster_image
 from core.fb_client import publish_photo_to_page, fetch_post_metrics, MetricsUnavailable, PostNotFound
 from core.feedback_loop import (
-    get_next_recommended_topic,
+    pick_next_topic,
     update_all_post_metrics,
     optimize_topic_weights,
     optimize_all_pages,
@@ -53,6 +53,8 @@ from core.feedback_loop import (
     topics_for_page,
     learning_phase,
     focus_winners,
+    cross_page_trials,
+    TRIAL_POSTS,
 )
 from core.topic_evolution import evolve_topics, retire_topic, reactivate_topic
 from core import comment_reply
@@ -821,6 +823,17 @@ def analytics_summary(page: Optional[int] = None, db: Session = Depends(get_db))
                 }
                 for i, w in enumerate(winners, start=1)
             ]
+            page_names = {p.id: p.name for p in db.query(FacebookPage).all()}
+            learning["trials"] = [
+                {
+                    "title": next((t.title for t in c["members"] if t.id == c["key"]), c["source_leader"].title),
+                    "source": page_names.get(c["source_page_id"]),
+                    "ratio": round(c["ratio"], 1),
+                    "done": c["done"],
+                    "of": TRIAL_POSTS,
+                }
+                for c in cross_page_trials(db, page)
+            ]
 
     return {
         "page_id": page,
@@ -883,14 +896,14 @@ def generate_content_endpoint(req: GenerateRequest, db: Session = Depends(get_db
     aspect_ratio = normalize_aspect_ratio(req.aspect_ratio or (page.aspect_ratio if page else None))
 
     # 1. Select Topic (Adaptive or Manual) using this page's learned weights
-    topic = None
+    topic, pick_reason = None, None
     if req.topic_id and req.topic_id != "auto":
         try:
             topic = db.query(ContentTopic).filter(ContentTopic.id == int(req.topic_id)).first()
         except (TypeError, ValueError):
             logger.warning(f"Invalid topic_id '{req.topic_id}', falling back to auto-select.")
     if not topic:
-        topic = get_next_recommended_topic(db, page.id if page else None)
+        topic, pick_reason = pick_next_topic(db, page.id if page else None)
 
     topic_dict = {
         "title": topic.title,
@@ -936,6 +949,7 @@ def generate_content_endpoint(req: GenerateRequest, db: Session = Depends(get_db
             image_path=img_path,
             caption=content_plan["caption"],
             status="ready",
+            pick_reason=pick_reason,
             created_at=datetime.now(timezone.utc)
         )
         db.add(new_post)
@@ -1302,6 +1316,7 @@ def serialize_post(p: Post, page_names: dict, full: bool = False, with_caption: 
         "published_at": iso_utc(p.published_at),
         "fb_removed_at": iso_utc(p.fb_removed_at),
         "publish_retry_until": iso_utc(p.publish_retry_until),
+        "pick_reason": p.pick_reason,
         "metrics": {
             "reactions": m.reactions if m else 0,
             "comments": m.comments if m else 0,

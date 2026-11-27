@@ -71,6 +71,7 @@ ADDED_COLUMNS = [
     ("posts", "fb_removed_at", "DATETIME"),
     ("comment_replies", "comment_image_url", "TEXT"),
     ("posts", "publish_retry_until", "DATETIME"),
+    ("posts", "pick_reason", "VARCHAR(20)"),
 ]
 
 

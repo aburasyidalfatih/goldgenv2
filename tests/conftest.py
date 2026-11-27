@@ -54,6 +54,17 @@ def _teardown_session():
     shutil.rmtree(TEST_ROOT, ignore_errors=True)
 
 
+@pytest.fixture(autouse=True)
+def _style_epoch_in_the_past(monkeypatch):
+    """
+    Tests date their posts relative to today (up to 200 days back), so the real
+    STYLE_EPOCH (31 Oct 2026) would cut a different share of them depending on the
+    day the suite runs. Tests about the epoch itself set it explicitly.
+    """
+    from datetime import datetime
+    monkeypatch.setattr(feedback_module, "STYLE_EPOCH", datetime(2000, 1, 1))
+
+
 @pytest.fixture
 def tmp_dir():
     """

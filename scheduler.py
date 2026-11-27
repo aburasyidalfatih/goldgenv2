@@ -18,7 +18,7 @@ from config import (
 from database.db_session import SessionLocal
 from database.models import AppSetting, Post, FacebookPage
 from core.feedback_loop import (
-    get_next_recommended_topic,
+    pick_next_topic,
     update_all_post_metrics,
     optimize_all_pages,
     optimize_topic_weights,
@@ -153,7 +153,7 @@ def auto_generate_and_post_job(page_row_id: int, retry_until: datetime | None = 
         logger.info(f"[Scheduler] Autonomous content cycle for '{page.name}'...")
 
         # 1. Pick a topic using THIS page's learned weights
-        topic = get_next_recommended_topic(db, page.id)
+        topic, pick_reason = pick_next_topic(db, page.id)
         topic_dict = {
             "title": topic.title,
             "category": topic.category,
@@ -194,6 +194,7 @@ def auto_generate_and_post_job(page_row_id: int, retry_until: datetime | None = 
             image_path=abspath,
             caption=content["caption"],
             status="publishing",
+            pick_reason=pick_reason,
         )
         db.add(post)
         mark_topic_used(db, topic, page.id)

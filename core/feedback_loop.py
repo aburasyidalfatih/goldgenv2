@@ -43,6 +43,24 @@ FOCUS_ROTATION_SIZE = 3
 # median 5-12x kept only about a fifth of that lead when posted again.
 REACH_PRIOR_POSTS = 3
 
+# Posts before this moment (naive UTC; 31 Oct 2026 07:00 WIB) used the old long
+# captions and infographic posters, which reached about a third of what the
+# current style does. Winners are judged on current-style posts only: a subject
+# last posted in the old style would otherwise be held down by numbers that say
+# nothing about how it does today (metal-detector topics: ~1,200 then, ~39,000 now).
+STYLE_EPOCH = datetime(2026, 10, 31, 0, 0)
+
+# Cross-page trial. Each page learns only from its own audience, so a subject that
+# wins big on one Fanspage is never tried on the others unless the 10% exploration
+# happens upon it (November 2026: metal-detector topics reached 4.9x Strike Gold
+# Archive's median, untried on the other three pages). A family proven on another
+# page gets TRIAL_POSTS posts here, one slot in every TRIAL_EVERY; after that this
+# page's own reach decides, as for any other topic.
+TRIAL_EVERY = 4
+TRIAL_POSTS = 2
+TRIAL_MIN_RATIO = 2.0     # damped family reach on the source page / its median reach
+TRIAL_MIN_POSTS = 3       # mature posts behind that result on the source page
+
 # How far back the nightly metric refresh reaches. Older posts keep the numbers
 # already recorded; their reach barely moves after a month anyway.
 METRICS_REFRESH_DAYS = 30
@@ -545,15 +563,17 @@ def _family_key(topic: ContentTopic) -> int:
 
 def _mature_reach(db: Session, page_id: int) -> tuple[dict, dict, float]:
     """
-    Reach of the page's mature, measured posts as (posts, total reach) per topic
-    and per family, plus the page's median reach. Families include posts of
-    variants switched off since: their results still say how the subject did.
+    Reach of the page's mature, measured current-style posts (since STYLE_EPOCH)
+    as (posts, total reach) per topic and per family, plus the page's median reach.
+    Families include posts of variants switched off since: their results still say
+    how the subject did.
     """
     rows = (db.query(Post.topic_id, ContentTopic.base_topic_id, PostMetric.reach)
               .join(PostMetric, PostMetric.post_id == Post.id)
               .join(ContentTopic, ContentTopic.id == Post.topic_id)
               .filter(Post.page_id == page_id, Post.status == "published",
-                      Post.published_at.isnot(None), Post.published_at <= _mature_cutoff())
+                      Post.published_at.isnot(None), Post.published_at >= STYLE_EPOCH,
+                      Post.published_at <= _mature_cutoff())
               .all())
     per_topic, per_family = {}, {}
     for topic_id, base_id, reach in rows:
@@ -575,8 +595,8 @@ def focus_winners(db: Session, page_id: int, topics: list | None = None,
     """
     The page's top FOCUS_ROTATION_SIZE winner families, best first.
 
-    A family is ranked by the reach of all its mature posts on this page together
-    (the base topic and every variant), damped toward the page's median reach
+    A family is ranked by the reach of all its mature current-style posts on this
+    page together (the base topic and every variant), damped toward the page's median reach
     (REACH_PRIOR_POSTS). Variants that flop pull their family down, so a family
     cannot stay on top on one viral test post while its variants underperform.
     Raw reach, not the selection weight: weights are capped, so two strong winners
@@ -635,21 +655,104 @@ def _rotate_focus(db: Session, page_id: int, winners: list) -> dict:
     return {"slot": slot, **winners[slot]}
 
 
-def get_next_recommended_topic(db: Session, page_id: int | None = None) -> ContentTopic:
+def _current_style_usage(db: Session, page_id: int) -> tuple[dict, set]:
+    """Posts per family the page produced since STYLE_EPOCH, and the topic ids used."""
+    rows = (db.query(Post.topic_id, ContentTopic.base_topic_id)
+              .join(ContentTopic, ContentTopic.id == Post.topic_id)
+              .filter(Post.page_id == page_id, Post.status.in_(PRODUCED_STATUSES),
+                      Post.created_at >= STYLE_EPOCH)
+              .all())
+    per_family = {}
+    for topic_id, base_id in rows:
+        per_family[base_id or topic_id] = per_family.get(base_id or topic_id, 0) + 1
+    return per_family, {topic_id for topic_id, _ in rows}
+
+
+def cross_page_trials(db: Session, page_id: int) -> list:
     """
-    Picks the next topic for a page in two phases.
+    Families proven on another Fanspage (current style, at least TRIAL_MIN_POSTS
+    mature posts, damped reach at least TRIAL_MIN_RATIO x that page's median) that
+    this page has not yet posted TRIAL_POSTS times since STYLE_EPOCH, strongest
+    first. Families already in this page's own focus rotation need no trial.
+    """
+    done, _ = _current_style_usage(db, page_id)
+    own_rotation = {w["key"] for w in focus_winners(db, page_id)}
+    active = db.query(ContentTopic).filter(ContentTopic.is_active.isnot(False)).all()
+    members_of = {}
+    for topic in active:
+        members_of.setdefault(_family_key(topic), []).append(topic)
+
+    best = {}
+    for (source_id,) in db.query(FacebookPage.id).filter(FacebookPage.id != page_id).all():
+        per_topic, per_family, median = _mature_reach(db, source_id)
+        if median <= 0:
+            continue
+        for key, stats in per_family.items():
+            if stats[0] < TRIAL_MIN_POSTS or key in own_rotation or done.get(key, 0) >= TRIAL_POSTS:
+                continue
+            members = members_of.get(key)
+            ratio = _damped_reach(stats, median) / median
+            if not members or ratio < TRIAL_MIN_RATIO or ratio <= best.get(key, {}).get("ratio", 0):
+                continue
+            best[key] = {
+                "key": key,
+                "ratio": ratio,
+                "source_page_id": source_id,
+                # the member that did best there; a different angle for the second trial
+                "source_leader": max(members, key=lambda t: _damped_reach(per_topic.get(t.id, (0, 0)), median)),
+                "members": members,
+                "done": done.get(key, 0),
+            }
+    return sorted(best.values(), key=lambda c: c["ratio"], reverse=True)
+
+
+def _trial_topic(trial: dict, used: set) -> ContentTopic:
+    """
+    The base topic first (the subject itself, written in the current style), then
+    the member that did best on the source page; one this page already used since
+    STYLE_EPOCH is skipped while another is left.
+    """
+    base = next((t for t in trial["members"] if t.id == trial["key"]), None)
+    order = [t for t in [base, trial["source_leader"]] + sorted(trial["members"], key=lambda t: t.id) if t]
+    return next((t for t in order if t.id not in used), trial["source_leader"])
+
+
+def _trial_due(db: Session, page_id: int) -> bool:
+    """True when none of the page's last TRIAL_EVERY - 1 posts was a cross-page trial."""
+    recent = (db.query(Post.pick_reason)
+                .filter(Post.page_id == page_id, Post.status.in_(PRODUCED_STATUSES))
+                .order_by(Post.created_at.desc(), Post.id.desc())
+                .limit(TRIAL_EVERY - 1).all())
+    return all(reason != "trial" for (reason,) in recent)
+
+
+def get_next_recommended_topic(db: Session, page_id: int | None = None) -> ContentTopic:
+    """The next topic for a page; see pick_next_topic."""
+    return pick_next_topic(db, page_id)[0]
+
+
+def pick_next_topic(db: Session, page_id: int | None = None) -> tuple[ContentTopic, str]:
+    """
+    Picks the next topic for a page, and why: 'test', 'trial', 'explore', 'focus'
+    (or 'weighted' without a page). Stored on the post, so the results of each kind
+    of pick can be compared.
 
     TEST: while the page has base topics it has never produced, it always takes
     one of them at random, so every base topic is tried exactly once on every page
     before anything repeats.
 
-    FOCUS: EXPLORE_RATE of picks go to the least-used topics (to notice a change in
-    taste). The rest rotate over the page's top reach winners, #1 -> #2 -> #3 ->
-    #1, each time using a fresh AI variant of that winner (about 90% the same
-    subject) and repeating the winner itself only when its variants run out.
+    FOCUS phase:
+    - TRIAL: one slot in every TRIAL_EVERY goes to a subject proven on another
+      Fanspage that this page has not tried in the current style (cross_page_trials).
+    - EXPLORE: EXPLORE_RATE of picks go to the least-used topics (to notice a change
+      in taste).
+    - The rest rotate over the page's top reach winners, #1 -> #2 -> #3 -> #1, each
+      time using a fresh AI variant of that winner (about 90% the same subject) and
+      repeating the winner itself only when its variants run out.
 
     When `page_id` is given everything uses that page's own weights and history,
-    so two Fanspages do not converge on identical content.
+    so two Fanspages do not converge on identical content; a trial only borrows
+    another page's result as a reason to try, and then this page's reach decides.
     """
     topics = topics_for_page(db, page_id)
     if not topics:
@@ -661,7 +764,17 @@ def get_next_recommended_topic(db: Session, page_id: int | None = None) -> Conte
             selected = random.choice(untested)
             logger.info(f"[Feedback Loop] TEST mode ({len(untested)} base topic(s) left) "
                         f"selected topic: {selected.title}")
-            return selected
+            return selected, "test"
+
+        if _trial_due(db, page_id):
+            trials = cross_page_trials(db, page_id)
+            if trials:
+                trial = trials[0]
+                selected = _trial_topic(trial, _current_style_usage(db, page_id)[1])
+                subject = next((t for t in trial["members"] if t.id == trial["key"]), selected)
+                logger.info(f"[Feedback Loop] TRIAL {trial['done'] + 1}/{TRIAL_POSTS} of '{subject.title}' "
+                            f"(x{trial['ratio']:.1f} the median on page {trial['source_page_id']}): {selected.title}")
+                return selected, "trial"
 
     weights_by_topic = (
         page_topic_weights(db, page_id, topics) if page_id is not None
@@ -692,7 +805,7 @@ def get_next_recommended_topic(db: Session, page_id: int | None = None) -> Conte
         pool = tied if len(tied) >= 3 else least_used_topics[:3]
         selected = random.choice(pool)
         logger.info(f"[Feedback Loop] EXPLORE mode selected topic: {selected.title}")
-        return selected
+        return selected, "explore"
 
     if page_id is not None:
         winner = _rotate_focus(db, page_id, focus_winners(db, page_id, topics, weights_by_topic))
@@ -701,13 +814,13 @@ def get_next_recommended_topic(db: Session, page_id: int | None = None) -> Conte
             f"[Feedback Loop] FOCUS mode winner #{winner['slot'] + 1} "
             f"'{winner['leader'].title}' -> {selected.title}"
         )
-        return selected
+        return selected, "focus"
 
     # No page (global catalog): weighted lottery, squared so winners dominate.
     weights = [max(0.1, weights_by_topic[t.id]) ** 2 for t in topics]
     selected = random.choices(topics, weights=weights, k=1)[0]
     logger.info(f"[Feedback Loop] Weighted pick: {selected.title} (weight: {weights_by_topic[selected.id]})")
-    return selected
+    return selected, "weighted"
 
 
 def topic_reach_summary(db: Session, page_id: int, topic: ContentTopic) -> dict:

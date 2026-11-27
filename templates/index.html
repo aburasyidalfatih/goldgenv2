@@ -647,6 +647,21 @@
                                   x-text="analyticsSummary.learning.pending > 0
                                       ? `Menunggu metrik ${analyticsSummary.learning.pending} topik (≥48 jam setelah tayang)`
                                       : `Berikutnya #${analyticsSummary.learning.next_rank} · rata-rata reach topik + variasinya · jumlah postingan`"></span>
+                            <!-- Subjects proven on another Fanspage, tried here in 1 of every 4 slots -->
+                            <template x-if="analyticsSummary.learning.trials?.length">
+                                <div class="mt-2">
+                                    <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Antrean Uji Silang</span>
+                                    <ol class="mt-1 space-y-1">
+                                        <template x-for="t in analyticsSummary.learning.trials" :key="t.title">
+                                            <li class="text-xs flex items-baseline gap-1.5 min-w-0 text-slate-300">
+                                                <span class="truncate" x-text="t.title"></span>
+                                                <span class="shrink-0 text-slate-400" x-text="`${t.ratio}× di ${t.source} · ${t.done}/${t.of}`"></span>
+                                            </li>
+                                        </template>
+                                    </ol>
+                                    <span class="text-xs text-blue-300 mt-1 block">Topik yang menang di Fanspage lain, dicoba di 1 dari 4 slot</span>
+                                </div>
+                            </template>
                         </div>
                     </template>
                     <template x-if="!analyticsSummary.learning">
@@ -918,6 +933,10 @@
                                         <template x-if="p.is_orphan">
                                             <span class="block mt-1 px-2 py-0.5 rounded text-xs font-semibold border bg-amber-500/10 text-amber-300 border-amber-500/30"
                                                   title="Fanspage asal sudah dihapus">Tanpa Fanspage</span>
+                                        </template>
+                                        <template x-if="p.pick_reason === 'trial'">
+                                            <span class="block mt-1 px-2 py-0.5 rounded text-xs font-semibold border bg-blue-500/10 text-blue-300 border-blue-500/30"
+                                                  title="Topik yang menang di Fanspage lain, sedang dicoba di sini">Uji silang</span>
                                         </template>
                                     </td>
                                     <td class="p-3 text-center font-mono" x-text="p.metrics?.reactions ?? '—'"></td>
